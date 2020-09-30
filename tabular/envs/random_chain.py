@@ -14,7 +14,7 @@ class RandomChainEnv(gym.Env):
         the left or right.
 
     State space:
-        Tabular: {1, ..., n}
+        Tabular: {0, ..., n-1}
 
     Action: 0
     """
@@ -34,7 +34,7 @@ class RandomChainEnv(gym.Env):
 
         # ==
         # Initialize state in the middle
-        self.state = int((self.n_states + 1) / 2)
+        self.state = int(self.n_states // 2)
 
     def step(self, action):
         """
@@ -43,7 +43,7 @@ class RandomChainEnv(gym.Env):
         :return:
         """
         # Random transition if within good range
-        if 0 < self.state <= self.n_states:
+        if 0 <= self.state < self.n_states:
             rand_trans = np.random.default_rng().choice([-1, 1])
             self.state = self.state + rand_trans
 
@@ -51,11 +51,11 @@ class RandomChainEnv(gym.Env):
         reward = 0.0
         done = False
 
-        if self.state == 0:
-            obs = 1
+        if self.state < 0:
+            obs = 0
             done = True
-        elif self.state > self.n_states:
-            obs = self.n_states
+        elif self.state >= self.n_states:
+            obs = self.n_states - 1
             reward = 1.0
             done = True
         else:
@@ -68,7 +68,7 @@ class RandomChainEnv(gym.Env):
         :return: initial observation
         """
         # Reset state
-        self.state = int((self.n_states + 1) / 2)
+        self.state = int(self.n_states // 2)
         obs = self.state
 
         return obs
