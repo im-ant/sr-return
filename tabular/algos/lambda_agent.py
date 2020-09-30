@@ -22,26 +22,7 @@ class LambdaAgent(BaseAgent):
         TODO define arguments
         """
         super().__init__(n_states, gamma=gamma, lr=lr)
-
         self.lamb = lamb
-
-        # ==
-        # Lambda return things
-        self.traj = None
-
-    def begin_episode(self, observation: int) -> int:
-        """
-        Start of episode
-        :param observation: integer denoting tabular state index
-        :return: integer action index
-        """
-        # Initialize trajectory
-        self.traj = {
-            's': [observation],
-            'r': []
-        }
-
-        return 0
 
     def step(self, observation: int, reward: float, done: bool) -> int:
         """

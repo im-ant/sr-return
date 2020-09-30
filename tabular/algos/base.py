@@ -24,12 +24,20 @@ class BaseAgent(object):
         # Init value fn (at 0.5 according to S&B Ex 6.2?)
         self.V = np.ones(self.n_states) * 0.5
 
+        # Saving single-episode trajectory
+        self.traj = None
+
     def begin_episode(self, observation: int) -> int:
         """
         Start of episode
         :param observation: integer denoting tabular state index
         :return: integer action index
         """
+        # Initialize trajectory
+        self.traj = {
+            's': [observation],
+            'r': []
+        }
 
         return 0
 
@@ -41,14 +49,7 @@ class BaseAgent(object):
         :param done: boolean for whether episode is finished
         :return: integer action index
         """
-        return 0
-
-    def _select_action(self) -> int:
-        """
-        Select action
-        :return: int action index
-        """
-        return 0
+        pass
 
     def _optimize_model(self) -> None:
         # Optimize
