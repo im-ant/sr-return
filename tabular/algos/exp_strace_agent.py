@@ -29,7 +29,7 @@ class STraceAgent(LambdaAgent):
         # TODO: should I initialize diagonals to be one? how to initialize this?
         #       i.e. can we assume there is always self occupancy so 1 is a good init?
         #       or maybe even 1 everywhere?
-        self.sTrace = np.zeros((self.n_states, self.n_states))
+        self.sTrace = np.ones((self.n_states, self.n_states))
         # np.fill_diagonal(self.sTrace, 1)
 
         # TODO: Successor trace should have its separate learning rate
