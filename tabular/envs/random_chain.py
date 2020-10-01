@@ -19,7 +19,7 @@ class RandomChainEnv(gym.Env):
     Action: 0
     """
 
-    def __init__(self, n_states=5):
+    def __init__(self, n_states=5, seed=0):
         #
         # ==
         # Attributes
@@ -36,6 +36,9 @@ class RandomChainEnv(gym.Env):
         # Initialize state in the middle
         self.state = int(self.n_states // 2)
 
+        # RNG
+        self.rng = np.random.default_rng(seed)
+
     def step(self, action):
         """
         One step transition
@@ -44,7 +47,7 @@ class RandomChainEnv(gym.Env):
         """
         # Random transition if within good range
         if 0 <= self.state < self.n_states:
-            rand_trans = np.random.default_rng().choice([-1, 1])
+            rand_trans = self.rng.choice([-1, 1])
             self.state = self.state + rand_trans
 
         #
