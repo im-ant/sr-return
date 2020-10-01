@@ -11,7 +11,7 @@ import numpy as np
 
 
 class BaseAgent(object):
-    def __init__(self, n_states, gamma=0.9, lr=0.1):
+    def __init__(self, n_states, gamma=0.9, lr=0.1, seed=0):
         # TODO define more arguments
         """
         TODO define arguments
@@ -26,6 +26,9 @@ class BaseAgent(object):
 
         # Saving single-episode trajectory
         self.traj = None
+
+        # RNG
+        self.rng = np.random.default_rng(seed)
 
     def begin_episode(self, observation: int) -> int:
         """

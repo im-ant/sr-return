@@ -17,12 +17,13 @@ class STraceAgent(LambdaAgent):
     def __init__(self, n_states,
                  gamma=0.9,
                  lamb=0.8,
-                 lr=0.1):
+                 lr=0.1,
+                 seed=0):
         # TODO define more arguments
         """
         TODO define arguments
         """
-        super().__init__(n_states, gamma=gamma, lamb=lamb, lr=lr)
+        super().__init__(n_states, gamma=gamma, lamb=lamb, lr=lr, seed=0)
 
         # Initialize successor trace matrix
         # TODO: should I initialize diagonals to be one? how to initialize this?
