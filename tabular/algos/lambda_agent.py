@@ -59,6 +59,7 @@ class LambdaAgent(BaseAgent):
         deltas = lamb_G - v_traj
 
         # Optimize model
+        # NOTE: not entirely offline this way (potential TODO change to offline)
         for t in range(len(s_traj)):
             self.V[s_traj[t]] += self.lr * deltas[t]
 
