@@ -22,7 +22,7 @@ class LambdaAgent(BaseAgent):
         """
         TODO define arguments
         """
-        super().__init__(n_states, gamma=gamma, lr=lr, seed=0)
+        super().__init__(n_states, gamma=gamma, lr=lr, seed=seed)
         self.lamb = lamb
 
     def step(self, observation: int, reward: float, done: bool) -> int:
