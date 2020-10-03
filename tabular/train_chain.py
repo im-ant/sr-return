@@ -5,49 +5,121 @@
 # =============================================================================
 
 import argparse
-import random
+from collections import namedtuple
+import logging
+import os
 from itertools import product
 
 import gym
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
 
 from algos.lambda_agent import LambdaAgent
 from algos.exp_strace_agent import STraceAgent
+from algos.sr_agent import SRAgent
 from envs.random_chain import RandomChainEnv
 
+# Things to log
+LogTupStruct = namedtuple('Log', field_names=['num_episodes',
+                                              'n_states',
+                                              'agentCls_name',
+                                              'seed',
+                                              'gamma',
+                                              'lr',
+                                              'lamb',
+                                              's_subsample_prop',
+                                              'use_true_s_mat',
+                                              'episode_idx',  # episode-specific logs
+                                              'total_steps',
+                                              'cumulative_reward',
+                                              'v_vec_max',
+                                              'v_vec_min',
+                                              'v_vec_avg',
+                                              'v_vec_rmse',
+                                              's_mat_norm',
+                                              's_mat_rmse',
+                                              ])
 
-def run_chain_env(agentCls, agent_kwargs, num_episodes=10, n_states=19, seed=0):
+
+def init_logger(logging_path: str) -> logging.Logger:
     """
-    Run training for a single agent and environment for a number of episodes
-    :param agentCls:
-    :param agent_kwargs:
-    :param num_episodes:
-    :param n_states:
-    :param seed:
+    Initializes the path to write the log to
+    :param logging_path: path to write the log to
+    :return: logging.Logger object
+    """
+    logger = logging.getLogger('Experiment-Log')
+
+    logger.setLevel(logging.INFO)
+
+    file_handler = logging.FileHandler(logging_path)
+    formatter = logging.Formatter('%(asctime)s||%(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+def run_chain_env(exp_kwargs: dict, logger=None):
+    """
+
+    :param exp_kwargs:
+    :param logger:
     :return:
     """
 
     # =====================================================
     # Initialize environment
-    environment = RandomChainEnv(n_states, seed=seed)
+    environment = RandomChainEnv(n_states=exp_kwargs['n_states'],
+                                 seed=exp_kwargs['seed'])
 
     # =====================================================
     # Initialize Agent
-    agent_kwargs['n_states'] = n_states
-    agent_kwargs['seed'] = seed
+    agentCls = exp_kwargs['agentCls']
+    agent_kwargs = {
+        'n_states': exp_kwargs['n_states'],
+        'gamma': exp_kwargs['gamma'],
+        'lamb': exp_kwargs['lamb'],
+        'lr': exp_kwargs['lr'],
+        's_prop_sample': exp_kwargs['s_subsample_prop'],
+        'use_true_s_mat': exp_kwargs['use_true_s_mat'],
+        'seed': exp_kwargs['seed'],
+    }
+
     agent = agentCls(**agent_kwargs)
 
     # =====
-    # Logging items
-    V_mat = np.empty((num_episodes, n_states))
-    epis_len_list = np.empty(num_episodes)
-    cumu_rew_list = np.empty(num_episodes)
+    # Pre-initialize some logging items
+
+    # Dictionary to log the things that don't change over each episode
+    exp_log_dict = {}
+    for k in exp_kwargs:
+        if 'Cls' in k:
+            exp_log_dict[f'{k}_name'] = exp_kwargs[k].__name__
+        else:
+            exp_log_dict[k] = exp_kwargs[k]
 
     # =====
-    # Run
-    for episode_idx in range(num_episodes):
+    # Solve the MDP to compute against true values
+    env_n_states = exp_kwargs['n_states']
+    chain_T_mat = get_chain_MRP_transition(env_n_states)
+
+    # Solve for lambda SR
+    if hasattr(agent, 'S_mat'):
+        agent_discount = agent.gamma * agent.lamb
+        lamb_SR_mat = solve_SR(chain_T_mat, agent_discount)
+    else:
+        lamb_SR_mat = None
+
+    # Solve for SR
+    env_SR_mat = solve_SR(chain_T_mat, exp_kwargs['gamma'])
+
+    # Compute value function
+    true_V_fn = get_chain_value_fn(env_n_states, exp_kwargs['gamma'],
+                                   sr_mat=env_SR_mat)
+
+    # =====
+    # Run episodes
+    for episode_idx in range(exp_kwargs['num_episodes']):
         # Reset env
         obs = environment.reset()
         action = agent.begin_episode(obs)
@@ -66,182 +138,277 @@ def run_chain_env(agentCls, agent_kwargs, num_episodes=10, n_states=19, seed=0):
             steps += 1
 
             if done:
-                # Save items
-                V_mat[episode_idx, :] = agent.V
-                epis_len_list[episode_idx] = steps
-                cumu_rew_list[episode_idx] = cumulative_reward
+                # ==
+                # Compute items
+                v_vec_rmse = compute_rmse(true_V_fn, agent.V)
+                s_mat_rmse = None
+                if hasattr(agent, 'S_mat'):
+                    s_mat_rmse = compute_rmse(lamb_SR_mat, agent.S_mat)
+                    # TODO compute s mat norm?
 
+                # ==
+                # Construct logging items
+                epis_log_dict = {k: exp_log_dict[k] for k in exp_log_dict}
+
+                epis_log_dict['episode_idx'] = episode_idx
+                epis_log_dict['total_steps'] = steps
+                epis_log_dict['cumulative_reward'] = cumulative_reward
+                epis_log_dict['v_vec_max'] = max(agent.V)
+                epis_log_dict['v_vec_min'] = min(agent.V)
+                epis_log_dict['v_vec_avg'] = np.mean(agent.V)
+                epis_log_dict['v_vec_rmse'] = v_vec_rmse
+                epis_log_dict['s_mat_norm'] = None
+                epis_log_dict['s_mat_rmse'] = s_mat_rmse
+
+                logtuple = LogTupStruct(**epis_log_dict)
+                log_str = '||'.join([str(e) for e in logtuple])
+                if logger is not None:
+                    logger.info(log_str)
+                else:
+                    if (episode_idx + 1) % 10 == 0:
+                        print(log_str)
+
+                # ==
+                # TODO: optionally save the SR mat
+
+                # ==
+                # Terminate
                 break
 
-    # =====================================================
-    # Process information and return
 
-    rmse_vec = compute_rmse(V_mat, agent_kwargs['gamma'])
-
-    run_info = {
-        'V_mat': V_mat,
-        'rmse_vec': rmse_vec,
-        'episode_lengths': epis_len_list,
-        'cumulative_rewards': epis_len_list
-    }
-
-    # if this is an strace agent, save matrix
-    if hasattr(agent, 'sTrace'):
-        run_info['sTrace_matrix'] = agent.sTrace
-
-    return run_info
-
-
-def compute_rmse(vMat, gamma):
+def get_chain_MRP_transition(n_states: int):
     """
-    Compute the root mean squared error (RMSE) for the random chain env
-    NOTE: currently only works in the UNDISCOUNTED case
-    :param vMat: (n, m) matrix of value function over training, where
-                 n is num episodes, m is number states
-    :param gamma: discount value, not used for now
-    :return: (n,) vector denoting RMSE for each episode
+    Construct the transition matrix of a chain MDP with random transitions
+    (i.e. Markov reward process)
+    :param num_states: number of states in the chain
+    :return: (n_states, n_states) matrix of transition
+    """
+    P_mat = np.zeros((n_states, n_states))
+    for i in range(n_states - 1):
+        P_mat[i, i + 1] = 0.5
+        P_mat[i + 1, i] = 0.5
+    P_mat[0, 0] = 0.0  # or 0.5?
+    P_mat[-1, -1] = 0.0
+
+    return P_mat
+
+
+def get_chain_value_fn(n_states: int, discount_factor: float,
+                       sr_mat=None):
+    """
+    Solve for the true value function of the MRP
+    :param n_states:
+    :param discount_factor:
+    :param sr_mat:
+    :return: (n_states,) vector, value fn
+    """
+    # Get future occupancy
+    if sr_mat is None:
+        T_mat = get_chain_MRP_transition(n_states)
+        sr_mat = solve_SR(T_mat, discount_factor)
+
+    # Generate reward fn
+    R_fn = np.zeros(n_states)
+    R_fn[-1] = 0.5  # TODO check correctness
+
+    # Get value fn
+    v_fn = np.dot(sr_mat, R_fn)
+    return v_fn
+
+
+def solve_SR(P_mat, discount_factor):
+    """
+    Solve for the future occupancy given a MRP transition matrix
+    and discount factor
+    :param P_mat: MRP transition matrix
+    :param discount_factor: discount
+    :return: (n_states, n_states) matrix of future disc occu
     """
 
-    n_chain = np.shape(vMat)[1]
+    n_states = np.shape(P_mat)[0]
 
     # ==
-    # Construct the true undiscounted value
-    # NOTE: assuming it follows the pattern TODO prove the pattern
-    numerators = [float(n) for n in range(1, n_chain+1)]
-    true_V = np.array(numerators) / (n_chain + 1)
-    true_V = true_V.reshape((1, n_chain))
+    # Safeguard against singular matrix ?
+    # df = min(discount_factor, 0.99999)
+    df = discount_factor
 
     # ==
+    # Solve the discounted occupancy problem
+    c_mat = np.identity(n_states) - (df * P_mat)
+    sr_mat = np.linalg.inv(c_mat)
+
+    return sr_mat
+
+
+def compute_rmse(target, prediction):
+    """
+    Compute the root mean squared error (RMSE) between two quantities
+    Treat both as flattened vectors
+    :param target:
+    :param prediction:
+    :return: scalar
+    """
+
+    # Always flatten
+    t_vec = target.flatten()
+    p_vec = prediction.flatten()
+
     # Compute RMSE
-    avg_sq_err = np.average(((vMat - true_V)**2), axis=1)
-    root_mse = np.sqrt(avg_sq_err)
+    sqr_err = (t_vec - p_vec) ** 2
+    rmse = np.sqrt(np.average(sqr_err))
+    return rmse
 
-    return root_mse
 
-
-def run_chain_experiments(agentCls, indep_vars):
+def run_chain_experiments(indep_vars_dict, args, logger=None):
     """
-    Run random chain expeirments with variables
-    :param agentCls: agent class
-    :param indep_vars: dict of lists for indep variables
-    :return: pandas.DataFrame for all runs
+    Run random chain experiment with cartesian prod of indep vars
+    :param indep_vars_dict:
+    :param use_tqdm:
+    :param logger:
+    :return:
     """
-    # ==
-    # Logging dict
-    df_dict = {
-        'gamma': [],
-        'lr': [],
-        'lambda': [],
-        'seed': [],
-        'num_episodes': [],
-        'n_states': [],
-        'final_rmse': []
-    }
 
     # ==
-    # Run experiments
+    # Unpack independent variables and take Cartesian product
 
-    # Make into nested list for cartesian prod, and compute total exps
-    indep_vars_lists = [indep_vars[k] for k in indep_vars]
+    # Unpack list
+    indep_vars_keys = []
+    indep_vars_lists = []
+    for k in indep_vars_dict:
+        indep_vars_keys.append(k)
+        indep_vars_lists.append(indep_vars_dict[k])
+
+    # Count total number of experiments
     total_n_exp = 1
     for ele in indep_vars_lists:
         total_n_exp *= len(ele)
 
-    # Run
+    # Take Cartesian product and make iterable
     cartesian_prod = product(*indep_vars_lists)
-    for attri_tup in tqdm(cartesian_prod, total=total_n_exp):
-        lr, lambd, cur_seed = attri_tup
 
-        gamma = 1.0
-        num_episodes = 10
-        n_states = 19
+    # Construct iterable items
+    if args.progress_verbosity == 'tqdm':
+        attri_iterable = tqdm(cartesian_prod, total=total_n_exp)
+    else:
+        attri_iterable = cartesian_prod
+    print_interval = None
+    try:
+        print_interval = int(args.progress_verbosity)
+    except ValueError:
+        pass
 
-        agent_kwargs = {
-            'gamma': gamma,
-            'lamb': lambd,
-            'lr': lr,
-        }
+    # ==
+    # Run experiments
+    counter = 0
+    for attri_tup in attri_iterable:
+        counter += 1
+        if (print_interval is not None
+                and counter % print_interval == 0):
+            print(f'Progress: [{counter}/{total_n_exp}]')
 
-        random_chain_kwargs = {
-            'agentCls': agentCls,
-            'agent_kwargs': agent_kwargs,
-            'num_episodes': num_episodes,
-            'n_states': n_states,
-            'seed': cur_seed
-        }
+        exp_kwargs = {indep_vars_keys[i]: attri_tup[i]
+                      for i in range(len(attri_tup))}
 
-        run_info = run_chain_env(**random_chain_kwargs)
-
-        df_dict['gamma'].append(gamma)
-        df_dict['lr'].append(lr)
-        df_dict['lambda'].append(lambd)
-        df_dict['seed'].append(cur_seed)
-        df_dict['num_episodes'].append(num_episodes)
-        df_dict['n_states'].append(n_states)
-        df_dict['final_rmse'].append(run_info['rmse_vec'][-1])
-
-    df_run = pd.DataFrame.from_dict(df_dict)
-    return df_run
+        run_chain_env(exp_kwargs, logger=logger)
 
 
 if __name__ == "__main__":
-    indep_vars = {
-        'lr_list': [0.001, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-        'lambd_list': [1.0, 0.99, 0.975, 0.95, 0.9, 0.8, 0.4, 0.0],
-        'seed_list': [s * 2 for s in range(50)]
-    }
+    # =====================================================
+    # Manual configs?
 
-    # agentCls = LambdaAgent
+    # Agents: [LambdaAgent, STraceAgent, SRAgent]
     agentCls = STraceAgent
 
-    df_run = run_chain_experiments(agentCls, indep_vars)
-
-    # Save dataframe
-    df_out_dir = '/network/tmp1/chenant/ant/exp_foward_trace/09-30/exp1_lambda'
-    df_out_path = f'{df_out_dir}/sTrace_1srinit_runs.csv'
-    df_run.to_csv(df_out_path)
-    print(f'DF saved to: {df_out_path}')
-
-
-
-
-
-def old_main():
-    # TODO: have a hyperparmeter .config file for the future
+    indep_vars_dict = {
+        'lr': [0.1],
+        'lamb': [0.7],
+        'num_episodes': [10],
+        'n_states': [19],
+        'agentCls': [agentCls],
+        'seed': [s * 2 for s in range(20)],
+        'gamma': [1.0],
+        's_subsample_prop': [0.05],
+        'use_true_s_mat': [False],
+    }
 
     # =====================================================
     # Initialize the argument parser
-    parser = argparse.ArgumentParser(description='Run env')
-
-    parser.add_argument('--num-episode', type=int, default=20, metavar='N',
-                        help='number of episodes to run the environment for (default: 500)')
-
-    parser.add_argument('--discount-factor', type=float, default=0.99, metavar='g',
-                        help='discount factor (gamma) for future reward (default: 0.99)')
-
-    # Experimental parameters
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
-    parser.add_argument('--log-path', type=str, default=None,
-                        help='file path to the log file (default: None, printout instead)')
-    parser.add_argument('--tmpdir', type=str, default='./',
-                        help='temporary directory to store dataset for training (default: cwd)')
+    parser = argparse.ArgumentParser(description='Random chain env')
+    parser.add_argument('--progress_verbosity', type=str, default='10',
+                        help='How often to print progress of experiments ran '
+                             '[int (per x experiments, 0 for no print),'
+                             ' tqdm for tqdm progress bar]'
+                             '(default: "10")')
+    parser.add_argument('--log_dir', type=str, default=None,
+                        help='file path to the experiment log directory'
+                             '(default: None)')
 
     args = parser.parse_args()
     print(args)
 
     # =====================================================
-    # Initialize GPU
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # print(device)
-
-    # =====================================================
     # Initialize logging
-    # TODO maybe do this
-    # Maybe TODO see logging procedures at
-    # https://github.com/im-ant/ElectrophysRL/blob/master/dopatorch/discrete_domains/train.py
+    log_title_str = '||'.join(LogTupStruct._fields)
+    if args.log_dir is not None:
+        log_path = os.path.join(args.log_dir, 'progress.csv')
+        logger = init_logger(log_path)
+        logger.info(log_title_str)
+    else:
+        print(log_title_str)
+        logger = None
 
     # =====================================================
-    # Start environmental interactions
-    # run_environment(args, device=device, logger=logger)
-    run_chain_experiments()
+    # Run experiments
+    run_chain_experiments(indep_vars_dict=indep_vars_dict,
+                          args=args,
+                          logger=logger)
+
+
+def old_name_main():
+    """
+    indep_vars = {
+        'lr_list': [0.001, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        'lambd_list': [1.0, 0.99, 0.975, 0.95, 0.9, 0.8, 0.4, 0.0],
+        'seed_list': [s * 2 for s in range(50)],
+        'gamma': [1.0],
+        's_prop_sample': [0.05],
+        'use_true_s_mat': [False],
+        'num_episodes': [10],
+        'n_states': [19],
+    }
+    """
+    indep_vars = {
+        'lr_list': [0.1],
+        'lambd_list': [0.75],
+        'seed_list': [s * 2 for s in range(20)],
+        'gamma': [1.0],
+        's_prop_sample': [0.05],
+        'use_true_s_mat': [False],
+        'num_episodes': [10],
+        'n_states': [19],
+    }
+    ""
+
+    save_df = True
+    df_out_dir = '/network/tmp1/chenant/ant/exp_foward_trace/09-30/exp2_low_anytime'
+    df_out_path = f'{df_out_dir}/sTrace_anytimeP5_runs.csv'
+
+    # indep_vars['lr_list'] = np.array(indep_vars['lr_list']) / 3.0
+    # agentCls = LambdaAgent
+
+    agentCls = STraceAgent
+    # agentCls = SRAgent
+
+    # ==
+    # Run stuff
+    df_run = run_chain_experiments(agentCls, indep_vars)
+
+    # Save dataframe or print
+    if save_df:
+        df_run.to_csv(df_out_path)
+        print(f'DF saved to: {df_out_path}')
+    else:
+        # print ?
+        grouped_df = df_run.groupby(['lr', 'lambda']).mean()
+        grouped_df = grouped_df.reset_index()
+        print(grouped_df)
