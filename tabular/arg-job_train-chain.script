@@ -37,8 +37,8 @@ source $HOME/venvs/rlpyt/bin/activate
 # (2) no data to copy
 
 # (3) launch job, (save model in $SLURM_TMPDIR??)
-python -u train_chain.py.py --log_dir $LOG_PATH \
-                            --progress_verbosity $VERBOSITY \
+python -u train_chain.py --log_dir $LOG_PATH \
+                         --progress_verbosity $VERBOSITY \
 
 # (4) Copy things over to scratch?
 # cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/
