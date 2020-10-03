@@ -59,7 +59,7 @@ def init_logger(logging_path: str) -> logging.Logger:
     return logger
 
 
-def run_chain_env(exp_kwargs: dict, logger=None):
+def run_chain_env(exp_kwargs: dict, args, logger=None):
     """
 
     :param exp_kwargs:
@@ -168,12 +168,26 @@ def run_chain_env(exp_kwargs: dict, logger=None):
                     if (episode_idx + 1) % 10 == 0:
                         print(log_str)
 
-                # ==
-                # TODO: optionally save the SR mat
+                last_logtuple = logtuple
 
                 # ==
                 # Terminate
                 break
+
+    # ==
+    # Save the agent S(R)-matrix
+    if args.log_dir is not None:
+        if hasattr(agent, 'S_mat'):
+            # Contruct the file name and path
+            attri_list = [f'{k}-{exp_log_dict[k]}' for k in exp_log_dict]
+            attri_str = '__'.join([str(e) for e in attri_list])
+            attri_str = attri_str.replace('.', 'd')
+            s_mat_file_name = f'sMat__{attri_str}.npy'
+
+            s_mat_file_path = os.path.join(args.log_dir, s_mat_file_name)
+
+            # Write file
+            np.save(s_mat_file_path, agent.S_mat)
 
 
 def get_chain_MRP_transition(n_states: int):
@@ -309,7 +323,7 @@ def run_chain_experiments(indep_vars_dict, args, logger=None):
         exp_kwargs = {indep_vars_keys[i]: attri_tup[i]
                       for i in range(len(attri_tup))}
 
-        run_chain_env(exp_kwargs, logger=logger)
+        run_chain_env(exp_kwargs, args, logger=logger)
 
 
 if __name__ == "__main__":
