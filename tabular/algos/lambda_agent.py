@@ -17,6 +17,10 @@ class LambdaAgent(BaseAgent):
                  gamma=0.9,
                  lamb=0.8,
                  lr=0.1,
+                 s_prop_sample=0.10,  # dummy var
+                 use_true_s_mat=False,  # dummy var
+                 use_rand_s_mat=False,  # dummy var
+                 use_true_r_fn=False,  # dummy var
                  seed=0):
         # TODO define more arguments
         """
