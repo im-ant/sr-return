@@ -29,6 +29,8 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',
                                               'lamb',
                                               's_subsample_prop',
                                               'use_true_s_mat',
+                                              'use_rand_s_mat',
+                                              'use_true_r_fn',
                                               'episode_idx',  # episode-specific logs
                                               'total_steps',
                                               'cumulative_reward',
@@ -82,6 +84,8 @@ def run_chain_env(exp_kwargs: dict, args, logger=None):
         'lr': exp_kwargs['lr'],
         's_prop_sample': exp_kwargs['s_subsample_prop'],
         'use_true_s_mat': exp_kwargs['use_true_s_mat'],
+        'use_rand_s_mat': exp_kwargs['use_rand_s_mat'],
+        'use_true_r_fn': exp_kwargs['use_true_r_fn'],
         'seed': exp_kwargs['seed'],
     }
 
@@ -317,6 +321,7 @@ def run_chain_experiments(indep_vars_dict, args, logger=None):
     for attri_tup in attri_iterable:
         counter += 1
         if (print_interval is not None
+                and print_interval > 0
                 and counter % print_interval == 0):
             print(f'Progress: [{counter}/{total_n_exp}]')
 
@@ -329,30 +334,36 @@ def run_chain_experiments(indep_vars_dict, args, logger=None):
 if __name__ == "__main__":
     # =====================================================
     # Manual configs?
+    # Using the same name as the logtuple keys
 
     # Agents: [LambdaAgent, STraceAgent, SRAgent]
     agentCls = STraceAgent
 
     indep_vars_dict = {
-        'lr': [0.1],
-        'lamb': [0.7],
-        'num_episodes': [10],
-        'n_states': [19],
-        'agentCls': [agentCls],
-        'seed': [s * 2 for s in range(20)],
-        'gamma': [1.0],
+        'lr': [0.005, 0.01, 0.1],
+        'lamb': [1.0],
+        'seed': [s * 2 for s in range(50)],
+        'gamma': [0.8],
         's_subsample_prop': [0.05],
         'use_true_s_mat': [False],
+        'use_rand_s_mat': [False],
+        'use_true_r_fn': [True],
+        'num_episodes': [5000],
+        'n_states': [19],
+        'agentCls': [STraceAgent, SRAgent],
     }
+
+    # indep_vars_dict['lr'] = np.array(indep_vars_dict['lr']) / 20.0
+
 
     # =====================================================
     # Initialize the argument parser
     parser = argparse.ArgumentParser(description='Random chain env')
-    parser.add_argument('--progress_verbosity', type=str, default='10',
+    parser.add_argument('--progress_verbosity', type=str, default='0',
                         help='How often to print progress of experiments ran '
                              '[int (per x experiments, 0 for no print),'
                              ' tqdm for tqdm progress bar]'
-                             '(default: "10")')
+                             '(default: "0")')
     parser.add_argument('--log_dir', type=str, default=None,
                         help='file path to the experiment log directory'
                              '(default: None)')
@@ -378,51 +389,46 @@ if __name__ == "__main__":
                           logger=logger)
 
 
-def old_name_main():
+def old_ref():
     """
-    indep_vars = {
-        'lr_list': [0.001, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-        'lambd_list': [1.0, 0.99, 0.975, 0.95, 0.9, 0.8, 0.4, 0.0],
-        'seed_list': [s * 2 for s in range(50)],
+    Keeping references
+
+    ----------
+    Sweep experiments
+    ----------
+    indep_vars_dict = {
+        'lr': [0.0001, 0.001, 0.005, 0.01, 0.02, 0.04, 0.08,
+               0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        'lamb': [1.0, 0.99, 0.975, 0.95, 0.9, 0.8, 0.5, 0.3, 0.0],
+        'seed': [s * 2 for s in range(50)],
         'gamma': [1.0],
-        's_prop_sample': [0.05],
+        's_subsample_prop': [0.05],
         'use_true_s_mat': [False],
+        'use_rand_s_mat': [False],
+        'use_true_r_fn': [False],
         'num_episodes': [10],
         'n_states': [19],
+        'agentCls': [agentCls],
     }
-    """
-    indep_vars = {
-        'lr_list': [0.1],
-        'lambd_list': [0.75],
-        'seed_list': [s * 2 for s in range(20)],
+
+    ----------
+    Casual runs
+    ----------
+    indep_vars_dict = {
+        'lr': [0.2],
+        'lamb': [0.4],
+        'seed': [s * 2 for s in range(10)],
         'gamma': [1.0],
-        's_prop_sample': [0.05],
-        'use_true_s_mat': [False],
+        's_subsample_prop': [0.05],
+        'use_true_s_mat': [True],
+        'use_rand_s_mat': [False],
+        'use_true_r_fn': [False],
         'num_episodes': [10],
         'n_states': [19],
+        'agentCls': [agentCls],
     }
-    ""
 
-    save_df = True
-    df_out_dir = '/network/tmp1/chenant/ant/exp_foward_trace/09-30/exp2_low_anytime'
-    df_out_path = f'{df_out_dir}/sTrace_anytimeP5_runs.csv'
 
-    # indep_vars['lr_list'] = np.array(indep_vars['lr_list']) / 3.0
-    # agentCls = LambdaAgent
+    """
 
-    agentCls = STraceAgent
-    # agentCls = SRAgent
-
-    # ==
-    # Run stuff
-    df_run = run_chain_experiments(agentCls, indep_vars)
-
-    # Save dataframe or print
-    if save_df:
-        df_run.to_csv(df_out_path)
-        print(f'DF saved to: {df_out_path}')
-    else:
-        # print ?
-        grouped_df = df_run.groupby(['lr', 'lambda']).mean()
-        grouped_df = grouped_df.reset_index()
-        print(grouped_df)
+    pass

@@ -4,14 +4,14 @@
 set -e
 
 # Optional: message to put into the created directory? TODO fix this
-dir_message="Experiments"
+dir_message="Comparing SR and STrace agents, 5000 episodes discounted (gamma=0.8)"
 
 # The parent experimental directory, each experiment will be stored as a sub-
 # directory within this directory
-dir_path="/network/tmp1/chenant/ant/exp_foward_trace/10-03/exp1_runs"
+dir_path="/network/tmp1/chenant/ant/exp_foward_trace/10-03/exp24_STrace_SR_comp_5000epis"
 
 # Experiment name (for the submission only)
-job_name="exp"
+job_name="exp24"
 
 # How verbose to be in the stdout print line (per n episodes (0 for None), or "tqdm")
 verbosity="50"
