@@ -17,12 +17,16 @@ class LambdaAgent(BaseAgent):
                  gamma=0.9,
                  lamb=0.8,
                  lr=0.1,
+                 s_prop_sample=0.10,  # dummy var
+                 use_true_s_mat=False,  # dummy var
+                 use_rand_s_mat=False,  # dummy var
+                 use_true_r_fn=False,  # dummy var
                  seed=0):
         # TODO define more arguments
         """
         TODO define arguments
         """
-        super().__init__(n_states, gamma=gamma, lr=lr, seed=0)
+        super().__init__(n_states, gamma=gamma, lr=lr, seed=seed)
         self.lamb = lamb
 
     def step(self, observation: int, reward: float, done: bool) -> int:
