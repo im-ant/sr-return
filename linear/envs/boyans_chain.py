@@ -58,10 +58,20 @@ class BoyansChainEnv(gym.Env):
         else:
             done = True  # stay on the zero-th state
 
+        phi = self.state_2_features(self.state)
+
+        return phi, reward, done, {}
+
+    def state_2_features(self, state):
+        """
+        Calculate the feature vector from a given state number
+        :param state: integer index
+        :return: feature vector
+        """
         # ==
         # Generate state indeces
-        s_i = (13 - self.state) // 4
-        s_j = (13 - self.state) % 4
+        s_i = (13 - state) // 4
+        s_j = (13 - state) % 4
 
         # ==
         # Generate features
@@ -75,7 +85,8 @@ class BoyansChainEnv(gym.Env):
             if s_j == 0:
                 phi[s_i] = 1.0
 
-        return phi, reward, done, {}
+        return phi
+
 
     def reset(self):
         self.state = self.n_states
