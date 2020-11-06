@@ -1,5 +1,5 @@
 # =============================================================================
-# Offline expected successor trace algorithm
+# Linear successor lambda return agent
 #
 # Author: Anthony G. Chen
 # =============================================================================
@@ -116,6 +116,8 @@ class SFReturnAgent(BaseLinearAgent):
         self.Wv += self.value_lr * d_Wv
 
     def _select_action(self, phi) -> int:
+        # TODO: change this for control (set policy here)
+        # for now only does policy eval 
         return 0
 
     def _optimize_model(self) -> None:
