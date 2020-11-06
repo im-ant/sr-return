@@ -43,6 +43,9 @@ class SFReturnAgent(BaseLinearAgent):
                             self.feature_dim))  # |A| * d * D
         self.Wv = np.zeros(self.feature_dim)
 
+        # (Optional) Give agent the optimal reward parameters
+        self.use_true_R_fn = False
+
     def step(self, phi_t: np.array, reward: float, done: bool) -> int:
         # Get new action based on state
         new_act = self._select_action(phi_t)
@@ -57,7 +60,7 @@ class SFReturnAgent(BaseLinearAgent):
         # Learning
 
         # Reward learning
-        if len(self.traj['r']) > 0:
+        if (not self.use_true_R_fn) and (len(self.traj['r']) > 0):
             self._optimize_reward_fn()
 
         # SF learning

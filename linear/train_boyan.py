@@ -51,7 +51,7 @@ def init_logger(logging_path: str) -> logging.Logger:
     return logger
 
 
-def solve_boyan():
+def solve_boyan_value_fn():
     """
     Solve the value function for each state of the 13-state Boyan's chain
     :return:
@@ -109,6 +109,43 @@ def compute_value_rmse(env, agent, true_v_fn):
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
+def solve_linear_R_params(env):
+    """
+    Solve the parameters of a linear reward function on the 13-state
+    Boyan's chain
+
+    :param env: the Boyan's chain environment
+    :return: (feature_dim, ) parameters of best fit linear reward function
+    """
+
+    n_states = 13 + 1
+    feature_dim = env.observation_space.shape[0]  # assume linear
+
+    # Fill matrices
+    phi_mat = np.empty((n_states, feature_dim))
+    r_vec = np.empty(n_states)
+
+    for s_n in range(n_states):
+        # Get state features
+        phi_mat[s_n] = env.state_2_features(s_n)
+
+        # Get reward
+        if s_n > 2:
+            s_R = -3.0
+        elif s_n == 2:
+            s_R = -2.0
+        else:
+            s_R = 0.0
+        r_vec[s_n] = s_R
+
+    # Solve parameters from Moore–Penrose inverse
+    phi_mat_T = np.transpose(phi_mat)
+    mp_inv = np.linalg.inv((phi_mat_T @ phi_mat)) @ phi_mat_T
+    bf_Wr = mp_inv @ r_vec
+
+    return bf_Wr
+
+
 def run_single_boyans_chain(exp_kwargs: dict,
                             args, logger=None):
     # ==================================================
@@ -144,7 +181,13 @@ def run_single_boyans_chain(exp_kwargs: dict,
             exp_log_dict[k] = exp_kwargs[k]
 
     # Compute the true Boyan's chain value function
-    true_v_fn = solve_boyan()
+    true_v_fn = solve_boyan_value_fn()
+
+    # (Optional) Give agent the best fit reward fn weights
+    if exp_kwargs['use_true_R_fn']:
+        bf_Wr = solve_linear_R_params(environment)
+        agent.Wr = bf_Wr
+        agent.use_true_R_fn = True
 
     # ==================================================
     # Run experiment
