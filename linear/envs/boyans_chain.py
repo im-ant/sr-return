@@ -26,8 +26,8 @@ class BoyansChainEnv(gym.Env):
         # Initialize spaces
         self.action_space = gym.spaces.Discrete(n=1)
         self.observation_space = gym.spaces.Box(
-            low = np.array([0.0, 0.0, 0.0, 0.0]),
-            high= np.array([1.0, 1.0, 1.0, 1.0]),
+            low=np.array([0.0, 0.0, 0.0, 0.0]),
+            high=np.array([1.0, 1.0, 1.0, 1.0]),
             dtype=np.float
         )
 
@@ -86,7 +86,6 @@ class BoyansChainEnv(gym.Env):
                 phi[s_i] = 1.0
 
         return phi
-
 
     def reset(self):
         self.state = self.n_states
