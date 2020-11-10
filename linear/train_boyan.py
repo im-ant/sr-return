@@ -104,7 +104,7 @@ def compute_value_rmse(env, agent, true_v_fn):
         # Compute the value estimate TODO change this
         # NOTE: assumes only a single action is available
         esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
-        
+
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
@@ -233,7 +233,7 @@ def run_single_boyans_chain(exp_kwargs: dict,
                 if logger is not None:
                     logger.info(log_str)
                 else:
-                    if (episode_idx + 1) % 100 == 0:  # NOTE TODO hacky modulo
+                    if (episode_idx + 1) % args.log_print_freq == 0:
                         print(log_str)
                 # ==
                 # Terminate
@@ -324,6 +324,11 @@ if __name__ == "__main__":
         help='How often to print progress of experiments ran '
              '[int (per x experiments, 0 for no print), tqdm for '
              'tqdm progress bar] (default: "0")')
+
+    parser.add_argument(
+        '--log_print_freq', type=int, default=100,
+        help='Frequency (number of episodes) to print the log; only prints '
+             'when there is no log file to write to (default: 100)')
 
     # Parse arguments
     args = parser.parse_args()
