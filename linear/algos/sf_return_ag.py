@@ -109,8 +109,7 @@ class SFReturnAgent(BaseLinearAgent):
         cur_act = self.traj['a'][t_idx]
 
         # Compute successor lambda return
-        cur_sf = self.Ws[cur_act] @ cur_phi  # (d, )
-        sl_G = cur_sf @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
+        sl_G = self.compute_Q_value(cur_phi, cur_act)
 
         sl_err = (sl_G - (cur_phi @ self.Wv))
         d_Wv = sl_err * cur_phi
@@ -118,16 +117,22 @@ class SFReturnAgent(BaseLinearAgent):
         # Update
         self.Wv += self.value_lr * d_Wv
 
+    def compute_Q_value(self, phi, act) -> float:
+        """
+        Helper function, compute the value given a state feature and action
+
+        :param phi: state feature
+        :param act: action
+        :return: value, Q(phi, act)
+        """
+        cur_sf = self.Ws[act] @ phi  # (d, )
+        sl_G = cur_sf @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
+        return sl_G
+
     def _select_action(self, phi) -> int:
         # TODO: change this for control (set policy here)
         # for now only does policy eval 
         return 0
-
-    def _optimize_model(self) -> None:
-        pass
-
-
-
 
 
 # ==

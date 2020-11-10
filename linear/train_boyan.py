@@ -16,6 +16,7 @@ import numpy as np
 from tqdm import tqdm
 
 from algos.sf_return_ag import SFReturnAgent
+from algos.td_lambda_ag import SarsaLambdaAgent
 from envs.boyans_chain import BoyansChainEnv
 
 # Things to log
@@ -100,12 +101,10 @@ def compute_value_rmse(env, agent, true_v_fn):
         # Get state features
         s_phi = env.state_2_features(s_n)
 
-        # Compute the value estimate
-        s_sf = agent.Ws[0] @ s_phi
-        esti_v_fn[s_n] = s_sf @ (
-                agent.Wr + (agent.gamma * (1.0 - agent.lamb) * agent.Wv)
-        )
-
+        # Compute the value estimate TODO change this
+        # NOTE: assumes only a single action is available
+        esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
+        
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
