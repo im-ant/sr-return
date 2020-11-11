@@ -16,6 +16,7 @@ import numpy as np
 from tqdm import tqdm
 
 from algos.sf_return_ag import SFReturnAgent
+from algos.td_lambda_ag import SarsaLambdaAgent
 from envs.boyans_chain import BoyansChainEnv
 
 # Things to log
@@ -30,6 +31,9 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-spec
                                               'total_steps',
                                               'cumulative_reward',
                                               'v_fn_rmse',
+                                              'value_loss_avg',  # agent log dict specific logs
+                                              'reward_loss_avg',
+                                              'sf_loss_avg',
                                               ])
 
 
@@ -100,11 +104,9 @@ def compute_value_rmse(env, agent, true_v_fn):
         # Get state features
         s_phi = env.state_2_features(s_n)
 
-        # Compute the value estimate
-        s_sf = agent.Ws[0] @ s_phi
-        esti_v_fn[s_n] = s_sf @ (
-                agent.Wr + (agent.gamma * (1.0 - agent.lamb) * agent.Wv)
-        )
+        # Compute the value estimate TODO change this
+        # NOTE: assumes only a single action is available
+        esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
 
     return compute_rmse(esti_v_fn, true_v_fn)
 
@@ -144,6 +146,48 @@ def solve_linear_R_params(env):
     bf_Wr = mp_inv @ r_vec
 
     return bf_Wr
+
+
+def helper_extract_agent_log_dict(agent):
+    """
+    Helper method to
+    :param agent: agent object
+    :return: dictionary for epis_log_dict
+    """
+    # The output log dictionary
+    # NOTE: need ot make this fit with the keys of LogTupStruct
+    log_dict = {
+        'value_loss_avg': None,
+        'reward_loss_avg': None,
+        'sf_loss_avg': None,
+    }
+
+    # ==
+    # Extract agent log
+    ag_dict = agent.log_dict
+    if ag_dict is None:
+        return log_dict
+
+    # Compute
+    if 'value_errors' in ag_dict:
+        avg_value_loss = np.average(
+            np.square(ag_dict['value_errors'])
+        )
+        log_dict['value_loss_avg'] = avg_value_loss
+
+    if 'reward_errors' in ag_dict:
+        avg_rew_loss = np.average(
+            np.square(ag_dict['reward_errors'])
+        )
+        log_dict['reward_loss_avg'] = avg_rew_loss
+
+    if 'sf_error_norms' in ag_dict:
+        # NOTE: it is already the norm so positive
+        avg_sf_loss = np.average(ag_dict['sf_error_norms'])
+        log_dict['sf_loss_avg'] = avg_sf_loss
+
+    return log_dict
+
 
 
 def run_single_boyans_chain(exp_kwargs: dict,
@@ -211,14 +255,15 @@ def run_single_boyans_chain(exp_kwargs: dict,
 
             if done:
                 # ==
-                # Compute value function RMSE
+                # Construct log item
+                epis_log_dict = {k: exp_log_dict[k] for k in exp_log_dict}
+
+                # ==
+                # Compute Value function RMSE
                 v_fn_rmse = compute_value_rmse(environment, agent, true_v_fn)
 
                 # ==
-                # Construct logging items
-
-                # Experiment specific logs
-                epis_log_dict = {k: exp_log_dict[k] for k in exp_log_dict}
+                # Episode log items
 
                 # Episode specific logs
                 epis_log_dict['episode_idx'] = episode_idx
@@ -226,16 +271,22 @@ def run_single_boyans_chain(exp_kwargs: dict,
                 epis_log_dict['cumulative_reward'] = cumulative_reward
                 epis_log_dict['v_fn_rmse'] = v_fn_rmse
 
-                # TODO: should log more things relating to the value fn, SF, loss etc.
+                # ==
+                # Compute losses from the agent logs
+                agent_log_dict = helper_extract_agent_log_dict(agent)
+                for k in agent_log_dict:
+                    epis_log_dict[k] = agent_log_dict[k]
 
+                # ==
                 # Construct log output
                 logtuple = LogTupStruct(**epis_log_dict)
                 log_str = '||'.join([str(e) for e in logtuple])
                 if logger is not None:
                     logger.info(log_str)
                 else:
-                    if (episode_idx + 1) % 100 == 0:  # NOTE TODO hacky modulo
+                    if (episode_idx + 1) % args.log_print_freq == 0:
                         print(log_str)
+
                 # ==
                 # Terminate
                 break
@@ -325,6 +376,11 @@ if __name__ == "__main__":
         help='How often to print progress of experiments ran '
              '[int (per x experiments, 0 for no print), tqdm for '
              'tqdm progress bar] (default: "0")')
+
+    parser.add_argument(
+        '--log_print_freq', type=int, default=100,
+        help='Frequency (number of episodes) to print the log; only prints '
+             'when there is no log file to write to (default: 100)')
 
     # Parse arguments
     args = parser.parse_args()
