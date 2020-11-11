@@ -31,6 +31,12 @@ class SarsaLambdaAgent(BaseLinearAgent):
         self.Wq = np.zeros((self.feature_dim, self.num_actions))  # TODO check correct
         self.Z = np.zeros((self.feature_dim, self.num_actions))  # TODO check correct
 
+    def begin_episode(self, phi):
+        super().begin_episode(phi)
+        self.log_dict = {
+            'value_errors': [],
+        }
+
     def step(self, phi_t: np.array, reward: float, done: bool) -> int:
         """
         Take step in the environment
@@ -85,6 +91,7 @@ class SarsaLambdaAgent(BaseLinearAgent):
 
         # ==
         # TODO log losses?
+        self.log_dict['value_errors'].append(td_err)
         pass
 
     def compute_Q_value(self, phi, act) -> float:

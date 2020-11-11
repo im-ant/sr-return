@@ -46,6 +46,15 @@ class SFReturnAgent(BaseLinearAgent):
         # (Optional) Give agent the optimal reward parameters
         self.use_true_R_fn = False
 
+    def begin_episode(self, phi):
+        super().begin_episode(phi)
+
+        self.log_dict = {
+            'reward_errors': [],
+            'sf_error_norms': [],
+            'value_errors': [],
+        }
+
     def step(self, phi_t: np.array, reward: float, done: bool) -> int:
         # Get new action based on state
         new_act = self._select_action(phi_t)
@@ -80,8 +89,12 @@ class SFReturnAgent(BaseLinearAgent):
         cur_rew = self.traj['r'][t_idx]
 
         # Update reward function
-        d_Wr = (cur_rew - np.dot(cur_phi, self.Wr)) * cur_phi
+        rew_err = cur_rew - np.dot(cur_phi, self.Wr)
+        d_Wr = rew_err * cur_phi
         self.Wr = self.Wr + (self.reward_lr * d_Wr)
+
+        # (Log) Reward error
+        self.log_dict['reward_errors'].append(d_Wr)
 
     def _optimize_successor_features(self) -> None:
         # Get most recent features
@@ -102,6 +115,11 @@ class SFReturnAgent(BaseLinearAgent):
         self.Ws[cur_act] += self.sf_lr * d_Ws
         # Maybe future TODO can use soft actions
 
+        # (Log) Norm of the SF error vector
+        self.log_dict['sf_error_norms'].append(
+            np.linalg.norm(sf_td_err)
+        )
+
     def _optimize_value_fn(self) -> None:
         # Get current feature
         t_idx = len(self.traj['phi']) - 1
@@ -116,6 +134,9 @@ class SFReturnAgent(BaseLinearAgent):
 
         # Update
         self.Wv += self.value_lr * d_Wv
+
+        # (Log) Value function error
+        self.log_dict['value_errors'].append(sl_err)
 
     def compute_Q_value(self, phi, act) -> float:
         """
