@@ -1,5 +1,5 @@
 # =============================================================================
-# Training the linear agent on Boyan's chain
+# Training the linear agent on linear prediction environments
 #
 # Author: Anthony G. Chen
 # =============================================================================
@@ -21,6 +21,7 @@ from envs.boyans_chain import BoyansChainEnv
 
 # Things to log
 LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-specific
+                                              'envCls_name',
                                               'agentCls_name',
                                               'seed',
                                               'gamma',
@@ -55,38 +56,28 @@ def init_logger(logging_path: str) -> logging.Logger:
     return logger
 
 
-def solve_boyan_value_fn():
-    """
-    Solve the value function for each state of the 13-state Boyan's chain
-    :return:
-    """
-    # Transition matrix
-    P_trans = np.zeros((14, 14))
-    for i in reversed(range(3, 14)):
-        P_trans[i, i - 1] = 0.5
-        P_trans[i, i - 2] = 0.5
-    P_trans[2, 1] = 1.0
-    P_trans[1, 0] = 1.0
-
-    # Reward function
-    # NOTE: charactering each state's reward by the expected reward
-    #       from transitioning out of the state. This may be slightly
-    #       different from the TD way of solving for state values.
-    R_fn = np.ones(14) * (-3.0)
-    R_fn[2] = -2.0
-    R_fn[1] = 0.0
-    R_fn[0] = 0.0
-
-    gamma = 1.0
-    c_mat = (np.identity(14) - (gamma * P_trans))
-    v = np.linalg.inv(c_mat) @ R_fn
-
-    return v
-
-
 def compute_rmse(vec_a, vec_b):
     sq_err = (vec_a - vec_b) ** 2
     return np.sqrt(np.mean(sq_err))
+
+
+def solve_value_fn(env, gamma):
+    """
+    Solve the (tabular) value function for each state
+    :return: tabular reward function, shaped (n_states, )
+    """
+    # Transition matrix
+    n_states = env.get_num_states()
+    P_trans = env.get_transition_matrix()
+
+    # Reward function
+    R_fn = env.get_reward_function()
+
+    # Solve and return
+    c_mat = (np.identity(n_states) - (gamma * P_trans))
+    v_fn = np.linalg.inv(c_mat) @ R_fn
+
+    return v_fn
 
 
 def compute_value_rmse(env, agent, true_v_fn):
@@ -96,7 +87,7 @@ def compute_value_rmse(env, agent, true_v_fn):
 
     :return: scalar RMSE
     """
-    n_states = 14
+    n_states = env.get_num_states()
 
     esti_v_fn = np.empty(n_states)
 
@@ -106,51 +97,16 @@ def compute_value_rmse(env, agent, true_v_fn):
 
         # Compute the value estimate TODO change this
         # NOTE: assumes only a single action is available
+        # TODO: make it into compute V function to marginalize over actions?
         esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
+        # esti_v_fn[s_n] = np.dot(s_phi, agent.Wv)  # TODO delete
 
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
-def solve_linear_R_params(env):
-    """
-    Solve the parameters of a linear reward function on the 13-state
-    Boyan's chain
-
-    :param env: the Boyan's chain environment
-    :return: (feature_dim, ) parameters of best fit linear reward function
-    """
-
-    n_states = 13 + 1
-    feature_dim = env.observation_space.shape[0]  # assume linear
-
-    # Fill matrices
-    phi_mat = np.empty((n_states, feature_dim))
-    r_vec = np.empty(n_states)
-
-    for s_n in range(n_states):
-        # Get state features
-        phi_mat[s_n] = env.state_2_features(s_n)
-
-        # Get reward
-        if s_n > 2:
-            s_R = -3.0
-        elif s_n == 2:
-            s_R = -2.0
-        else:
-            s_R = 0.0
-        r_vec[s_n] = s_R
-
-    # Solve parameters from Moore–Penrose inverse
-    phi_mat_T = np.transpose(phi_mat)
-    mp_inv = np.linalg.inv((phi_mat_T @ phi_mat)) @ phi_mat_T
-    bf_Wr = mp_inv @ r_vec
-
-    return bf_Wr
-
-
 def helper_extract_agent_log_dict(agent):
     """
-    Helper method to
+    Helper method to extract the agent's logged items for the logger
     :param agent: agent object
     :return: dictionary for epis_log_dict
     """
@@ -189,12 +145,12 @@ def helper_extract_agent_log_dict(agent):
     return log_dict
 
 
-
 def run_single_boyans_chain(exp_kwargs: dict,
                             args, logger=None):
     # ==================================================
     # Initialize environment
-    environment = BoyansChainEnv(
+    envCls = exp_kwargs['envCls']
+    environment = envCls(
         exp_kwargs['seed']
     )
 
@@ -225,11 +181,11 @@ def run_single_boyans_chain(exp_kwargs: dict,
             exp_log_dict[k] = exp_kwargs[k]
 
     # Compute the true Boyan's chain value function
-    true_v_fn = solve_boyan_value_fn()
+    true_v_fn = solve_value_fn(environment, exp_kwargs['gamma'])
 
     # (Optional) Give agent the best fit reward fn weights
     if exp_kwargs['use_true_R_fn']:
-        bf_Wr = solve_linear_R_params(environment)
+        bf_Wr = environment.solve_linear_reward_parameters()
         agent.Wr = bf_Wr
         agent.use_true_R_fn = True
 
@@ -301,6 +257,9 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     # Training attributes
     num_episodes = config['Training'].getint('num_episodes')
 
+    # Get environment attributes
+    envCls = globals()[config['Env']['cls_string']]  # NOTE super hacky
+
     # Get agent attributes
     agentCls = globals()[config['Agent']['cls_string']]  # NOTE super hacky
     use_true_R_fn = config['Agent'].getboolean('use_true_R_fn')
@@ -313,6 +272,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
 
     # Get the list of attributes
     indep_vars_dict = {
+        'envCls': [envCls],
         'agentCls': [agentCls],
         'num_episodes': [num_episodes],
         'use_true_R_fn': [use_true_R_fn],
