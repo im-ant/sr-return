@@ -37,9 +37,9 @@ source $HOME/venvs/rlpyt/bin/activate
 # (2) no data to copy
 
 # (3) launch job, (save model in $SLURM_TMPDIR??)
-python -u train_boyan.py --config_path $CONFIG_PATH \
-                         --log_dir $LOG_PATH \
-                         --progress_verbosity $VERBOSITY \
+python -u train_linear_pred.py --config_path $CONFIG_PATH \
+                               --log_dir $LOG_PATH \
+                               --progress_verbosity $VERBOSITY \
 
 # (4) Copy things over to scratch?
 # cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/

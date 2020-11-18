@@ -95,6 +95,69 @@ class BoyansChainEnv(gym.Env):
 
         return phi
 
+    def get_num_states(self):
+        """
+        Helper function to get the number of underlying states in this env
+        NOTE: +1 to include the termination state
+        :return: int of number of states
+        """
+        return self.n_states + 1
+
+    def get_transition_matrix(self):
+        """
+        Helper function to return the transition matrix for this env
+        :return: (self.n_states+1, self.n_states+1) np matrix
+        """
+        # Transition matrix
+        p_n_states = self.n_states + 1
+        P_trans = np.zeros((p_n_states, p_n_states))
+        for i in reversed(range(3, p_n_states)):
+            P_trans[i, i - 1] = 0.5
+            P_trans[i, i - 2] = 0.5
+        P_trans[2, 1] = 1.0
+        P_trans[1, 0] = 1.0
+
+        return P_trans
+
+    def get_reward_function(self):
+        """
+        Helper function to get the (tabular) reward function for each state
+        NOTE: charactering each state's reward by the expected reward
+              from transitioning out of the state. This may be slightly
+              different from the TD way of solving for state values.
+        :return: (self.n_states+1,) vector
+        """
+        p_n_states = self.n_states + 1
+        R_fn = np.ones(p_n_states) * (-3.0)
+        R_fn[2] = -2.0
+        R_fn[1] = 0.0
+        R_fn[0] = 0.0
+
+        return R_fn
+
+    def solve_linear_reward_parameters(self):
+        """
+        Helper function to solve for the best-fit linear parameters for the
+        reward function.
+        :return: (self.feature_dim, ) parameters for reward fn
+        """
+        p_n_states = self.n_states + 1
+
+        # Get feature matrix (p_n_states, feature_dim)
+        phi_mat = np.empty((p_n_states, self.feature_dim))
+        for s_n in range(p_n_states):
+            phi_mat[s_n] = self.state_2_features(s_n)
+
+        # Get reward function
+        r_vec = self.get_reward_function()
+
+        # Solve parameters from Moore–Penrose inverse
+        phi_mat_T = np.transpose(phi_mat)
+        mp_inv = np.linalg.inv((phi_mat_T @ phi_mat)) @ phi_mat_T
+        bf_Wr = mp_inv @ r_vec
+
+        return bf_Wr
+
     def render(self):
         pass
 
