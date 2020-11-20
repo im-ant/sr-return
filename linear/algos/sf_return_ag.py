@@ -73,8 +73,8 @@ class SFReturnAgent(BaseLinearAgent):
             self._optimize_reward_fn()
 
         # SF learning
-        if len(self.traj['phi']) > 1:
-            self._optimize_successor_features()
+        if len(self.traj['r']) > 0:
+            self._optimize_successor_features(done)
 
         # Value learning
         if len(self.traj['phi']) > 0:
@@ -96,17 +96,22 @@ class SFReturnAgent(BaseLinearAgent):
         # (Log) Reward error
         self.log_dict['reward_errors'].append(d_Wr)
 
-    def _optimize_successor_features(self) -> None:
-        # Get most recent features
-        t_idx = len(self.traj['phi']) - 2
+    def _optimize_successor_features(self, done) -> None:
+        # Get current experience tuple (S, A)
+        t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
         cur_act = self.traj['a'][t_idx]
-        nex_phi = self.traj['phi'][t_idx+1]
-        nex_act = self.traj['a'][t_idx+1]
+
+        # Get next experience tuple if present (S', A')
+        if not done:
+            nex_phi = self.traj['phi'][t_idx+1]
+            nex_act = self.traj['a'][t_idx+1]
+            nex_sf = self.Ws[nex_act] @ nex_phi
+        else:
+            nex_sf = 0.0
 
         # Compute SF TD errors
         cur_sf = self.Ws[cur_act] @ cur_phi
-        nex_sf = self.Ws[nex_act] @ nex_phi
         sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf
 
         d_Ws = np.outer(sf_td_err, cur_phi)
@@ -127,7 +132,7 @@ class SFReturnAgent(BaseLinearAgent):
         cur_act = self.traj['a'][t_idx]
 
         # Compute successor lambda return
-        sl_G = self.compute_Q_value(cur_phi, cur_act)
+        sl_G = self.compute_successor_return(cur_phi, cur_act)
 
         sl_err = (sl_G - (cur_phi @ self.Wv))
         d_Wv = sl_err * cur_phi
@@ -138,10 +143,10 @@ class SFReturnAgent(BaseLinearAgent):
         # (Log) Value function error
         self.log_dict['value_errors'].append(sl_err)
 
-    def compute_Q_value(self, phi, act) -> float:
+    def compute_successor_return(self, phi, act) -> float:
         """
-        Helper function, compute the value given a state feature and action
-
+        Helper function, compute the value estimate using the lambda
+        successor feature return
         :param phi: state feature
         :param act: action
         :return: value, Q(phi, act)
@@ -149,6 +154,16 @@ class SFReturnAgent(BaseLinearAgent):
         cur_sf = self.Ws[act] @ phi  # (d, )
         sl_G = cur_sf @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
         return sl_G
+
+    def compute_Q_value(self, phi, act) -> float:
+        """
+        Helper function, compute the value given a state feature and action
+        using just the value function parameters
+        NOTE: using Q for compatibility but it should be V function
+
+        :return: value, Q(phi, act)
+        """
+        return np.dot(phi, self.Wv)
 
     def _select_action(self, phi) -> int:
         # TODO: change this for control (set policy here)

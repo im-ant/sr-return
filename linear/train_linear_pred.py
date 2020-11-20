@@ -18,6 +18,7 @@ from tqdm import tqdm
 from algos.sf_return_ag import SFReturnAgent
 from algos.td_lambda_ag import SarsaLambdaAgent
 from envs.boyans_chain import BoyansChainEnv
+from envs.random_walk_chain import RandomWalkChainEnv
 
 # Things to log
 LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-specific
@@ -32,6 +33,7 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-spec
                                               'total_steps',
                                               'cumulative_reward',
                                               'v_fn_rmse',
+                                              'sf_G_rmse',
                                               'value_loss_avg',  # agent log dict specific logs
                                               'reward_loss_avg',
                                               'sf_loss_avg',
@@ -82,8 +84,8 @@ def solve_value_fn(env, gamma):
 
 def compute_value_rmse(env, agent, true_v_fn):
     """
-    Compute the RMSE for the value function of a given agent.
-    Here hard-coded for the 14-state Boyan's chain.
+    Compute the RMSE for the value function of a given agent
+    and environment
 
     :return: scalar RMSE
     """
@@ -99,8 +101,25 @@ def compute_value_rmse(env, agent, true_v_fn):
         # NOTE: assumes only a single action is available
         # TODO: make it into compute V function to marginalize over actions?
         esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
-        # esti_v_fn[s_n] = np.dot(s_phi, agent.Wv)  # TODO delete
 
+    return compute_rmse(esti_v_fn, true_v_fn)
+
+
+def compute_sf_ret_rmse(env, agent, true_v_fn):
+    """
+    Compute RMSE for the lambda successor return, if possible
+    :return: scalar RMSE
+    """
+    if not hasattr(agent, 'compute_successor_return'):
+        return None
+
+    n_states = env.get_num_states()
+    esti_v_fn = np.empty(n_states)
+    for s_n in range(n_states):
+        s_phi = env.state_2_features(s_n)  # state features
+        esti_v_fn[s_n] = agent.compute_successor_return(
+            s_phi, 0
+        )  # compute value
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
@@ -145,8 +164,8 @@ def helper_extract_agent_log_dict(agent):
     return log_dict
 
 
-def run_single_boyans_chain(exp_kwargs: dict,
-                            args, logger=None):
+def run_single_lienar_experiment(exp_kwargs: dict,
+                                 args, logger=None):
     # ==================================================
     # Initialize environment
     envCls = exp_kwargs['envCls']
@@ -217,6 +236,7 @@ def run_single_boyans_chain(exp_kwargs: dict,
                 # ==
                 # Compute Value function RMSE
                 v_fn_rmse = compute_value_rmse(environment, agent, true_v_fn)
+                sf_G_rmse = compute_sf_ret_rmse(environment, agent, true_v_fn)
 
                 # ==
                 # Episode log items
@@ -226,6 +246,7 @@ def run_single_boyans_chain(exp_kwargs: dict,
                 epis_log_dict['total_steps'] = steps
                 epis_log_dict['cumulative_reward'] = cumulative_reward
                 epis_log_dict['v_fn_rmse'] = v_fn_rmse
+                epis_log_dict['sf_G_rmse'] = sf_G_rmse
 
                 # ==
                 # Compute losses from the agent logs
@@ -246,6 +267,9 @@ def run_single_boyans_chain(exp_kwargs: dict,
                 # ==
                 # Terminate
                 break
+
+    # np.set_printoptions(precision=3)  # TODO delete below
+    # print(agent.Ws)
 
     # Maybe: save the SR matrix?
 
@@ -308,7 +332,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     for attri_tup in attri_iterable:
         exp_kwargs = {indep_vars_keys[i]: attri_tup[i]
                       for i in range(len(attri_tup))}
-        run_single_boyans_chain(exp_kwargs, args, logger=logger)
+        run_single_lienar_experiment(exp_kwargs, args, logger=logger)
 
 
 if __name__ == "__main__":
