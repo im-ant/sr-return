@@ -57,19 +57,18 @@ class SarsaLambdaAgent(BaseLinearAgent):
 
         # ==
         # Learning (via trace)
-        if len(self.traj['phi']) > 1:
-            self._optimize_model()
+        if len(self.traj['r']) > 0:
+            self._optimize_model(done)
 
         return new_act
 
-    def _optimize_model(self) -> None:
-        # Unpack experience tuple (S, A, R', S', A')
-        t_idx = len(self.traj['phi']) - 2
+    def _optimize_model(self, done) -> None:
+        # ==
+        # Unpack current experience tuple, (S, A, R')
+        t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
         cur_act = self.traj['a'][t_idx]
         rew = self.traj['r'][t_idx]
-        nex_phi = self.traj['phi'][t_idx+1]
-        nex_act = self.traj['a'][t_idx+1]
 
         # ==
         # Update trace
@@ -81,16 +80,22 @@ class SarsaLambdaAgent(BaseLinearAgent):
 
         # ==
         # Update Q function
-        cur_q = self.compute_Q_value(cur_phi, cur_act)
-        nex_q = self.compute_Q_value(nex_phi, nex_act)
+        if not done:
+            nex_phi = self.traj['phi'][t_idx + 1]
+            nex_act = self.traj['a'][t_idx + 1]
+            nex_q = self.compute_Q_value(nex_phi, nex_act)
+        else:
+            nex_q = 0.0
 
+        cur_q = self.compute_Q_value(cur_phi, cur_act)
         td_err = rew + (self.gamma * nex_q) - cur_q
 
+        # Parameter updates
         del_Wq = td_err * self.Z
         self.Wq = self.Wq + (self.lr * del_Wq)
 
         # ==
-        # TODO log losses?
+        # Logging losses
         self.log_dict['value_errors'].append(td_err)
         pass
 
