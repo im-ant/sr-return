@@ -132,7 +132,7 @@ class SFReturnAgent(BaseLinearAgent):
         cur_act = self.traj['a'][t_idx]
 
         # Compute successor lambda return
-        sl_G = self.compute_Q_value(cur_phi, cur_act)
+        sl_G = self.compute_successor_return(cur_phi, cur_act)
 
         sl_err = (sl_G - (cur_phi @ self.Wv))
         d_Wv = sl_err * cur_phi
@@ -143,10 +143,10 @@ class SFReturnAgent(BaseLinearAgent):
         # (Log) Value function error
         self.log_dict['value_errors'].append(sl_err)
 
-    def compute_Q_value(self, phi, act) -> float:
+    def compute_successor_return(self, phi, act) -> float:
         """
-        Helper function, compute the value given a state feature and action
-
+        Helper function, compute the value estimate using the lambda
+        successor feature return
         :param phi: state feature
         :param act: action
         :return: value, Q(phi, act)
@@ -154,6 +154,16 @@ class SFReturnAgent(BaseLinearAgent):
         cur_sf = self.Ws[act] @ phi  # (d, )
         sl_G = cur_sf @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
         return sl_G
+
+    def compute_Q_value(self, phi, act) -> float:
+        """
+        Helper function, compute the value given a state feature and action
+        using just the value function parameters
+        NOTE: using Q for compatibility but it should be V function
+
+        :return: value, Q(phi, act)
+        """
+        return np.dot(phi, self.Wv)
 
     def _select_action(self, phi) -> int:
         # TODO: change this for control (set policy here)
