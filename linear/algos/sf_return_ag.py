@@ -73,8 +73,8 @@ class SFReturnAgent(BaseLinearAgent):
             self._optimize_reward_fn()
 
         # SF learning
-        if len(self.traj['phi']) > 1:
-            self._optimize_successor_features()
+        if len(self.traj['r']) > 0:
+            self._optimize_successor_features(done)
 
         # Value learning
         if len(self.traj['phi']) > 0:
@@ -96,17 +96,22 @@ class SFReturnAgent(BaseLinearAgent):
         # (Log) Reward error
         self.log_dict['reward_errors'].append(d_Wr)
 
-    def _optimize_successor_features(self) -> None:
-        # Get most recent features
-        t_idx = len(self.traj['phi']) - 2
+    def _optimize_successor_features(self, done) -> None:
+        # Get current experience tuple (S, A)
+        t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
         cur_act = self.traj['a'][t_idx]
-        nex_phi = self.traj['phi'][t_idx+1]
-        nex_act = self.traj['a'][t_idx+1]
+
+        # Get next experience tuple if present (S', A')
+        if not done:
+            nex_phi = self.traj['phi'][t_idx+1]
+            nex_act = self.traj['a'][t_idx+1]
+            nex_sf = self.Ws[nex_act] @ nex_phi
+        else:
+            nex_sf = 0.0
 
         # Compute SF TD errors
         cur_sf = self.Ws[cur_act] @ cur_phi
-        nex_sf = self.Ws[nex_act] @ nex_phi
         sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf
 
         d_Ws = np.outer(sf_td_err, cur_phi)
