@@ -82,6 +82,24 @@ def solve_value_fn(env, gamma):
     return v_fn
 
 
+def solve_linear_sf(env, discount_factor):
+    """
+    Solve for the linear successor features given an environment
+    :param discount_factor: (gamma * lamb)
+    :return:
+    """
+    phiMat = env.get_feature_matrix()
+    transMat = env.get_transition_matrix()
+    p_n_states = np.shape(transMat)[0]
+
+    cMat = np.identity(p_n_states) - (discount_factor * transMat)
+    qMat = cMat @ phiMat
+
+    # Solve
+    Z = np.linalg.inv(qMat.T @ qMat) @ qMat.T @ transMat @ phiMat
+    return Z
+
+
 def compute_value_rmse(env, agent, true_v_fn):
     """
     Compute the RMSE for the value function of a given agent

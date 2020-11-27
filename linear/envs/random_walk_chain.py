@@ -118,6 +118,18 @@ class RandomWalkChainEnv(gym.Env):
 
         return R_fn
 
+    def get_feature_matrix(self):
+        """
+        Helper function to get the state to features mapping matrix
+        :return: (self.n_states+1, self.feature_dim) np matrix
+        """
+        # Get feature matrix (p_n_states, feature_dim)
+        p_n_states = self.n_states + 1
+        phi_mat = np.empty((p_n_states, self.feature_dim))
+        for s_n in range(p_n_states):
+            phi_mat[s_n] = self.state_2_features(s_n)
+        return phi_mat
+
     def solve_linear_reward_parameters(self):
         """
         Helper function to solve for the best-fit linear parameters for the
