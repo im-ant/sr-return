@@ -144,6 +144,7 @@ def helper_extract_agent_log_dict(agent):
         return log_dict
 
     # Compute
+    # TODO: add more conditions to check if the list is empty?
     if 'value_errors' in ag_dict:
         avg_value_loss = np.average(
             np.square(ag_dict['value_errors'])
@@ -269,7 +270,8 @@ def run_single_lienar_experiment(exp_kwargs: dict,
                 break
 
     # np.set_printoptions(precision=3)  # TODO delete below
-    # print(agent.Ws)
+    # print(np.shape(agent.Ws))
+    # print(agent.Ws[0, 7:12, 7:12])
 
     # Maybe: save the SR matrix?
 
