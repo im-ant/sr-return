@@ -73,7 +73,7 @@ class SFReturnAgent(BaseLinearAgent):
             self._optimize_reward_fn()
 
         # SF learning
-        if len(self.traj['r']) > 0:
+        if len(self.traj['phi']) > 1:
             self._optimize_successor_features(done)
 
         # Value learning
@@ -83,6 +83,9 @@ class SFReturnAgent(BaseLinearAgent):
         return new_act
 
     def _optimize_reward_fn(self) -> None:
+        # NOTE: We learn apping phi_t -> r_{t+1} to properly account for all
+        #       rewards, even though theory says we map phi_t -> r_t.
+        #       (We can pretend r_{t+1} is r_{t})
         # Get most recent feature & reward
         t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
@@ -98,23 +101,23 @@ class SFReturnAgent(BaseLinearAgent):
 
     def _optimize_successor_features(self, done) -> None:
         # Get current experience tuple (S, A)
-        t_idx = len(self.traj['r']) - 1
+        t_idx = len(self.traj['phi']) - 2
         cur_phi = self.traj['phi'][t_idx]
         cur_act = self.traj['a'][t_idx]
+        nex_phi = self.traj['phi'][t_idx + 1]
 
         # Get next experience tuple if present (S', A')
         if not done:
-            nex_phi = self.traj['phi'][t_idx+1]
             nex_act = self.traj['a'][t_idx+1]
-            nex_sf = self.Ws[nex_act] @ nex_phi
+            nex_sf = np.transpose(self.Ws[nex_act]) @ nex_phi  # NOTE transpose?
         else:
             nex_sf = 0.0
 
         # Compute SF TD errors
-        cur_sf = self.Ws[cur_act] @ cur_phi
-        sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf
+        cur_sf = np.transpose(self.Ws[cur_act]) @ cur_phi  # NOTE transpose?
+        sf_td_err = nex_phi + (self.lamb * self.gamma * nex_sf) - cur_sf  # (d, )
 
-        d_Ws = np.outer(sf_td_err, cur_phi)
+        d_Ws = np.transpose(np.outer(sf_td_err, cur_phi))  # NOTE transpose?
 
         # Update
         self.Ws[cur_act] += self.sf_lr * d_Ws
@@ -134,7 +137,7 @@ class SFReturnAgent(BaseLinearAgent):
         # Compute successor lambda return
         sl_G = self.compute_successor_return(cur_phi, cur_act)
 
-        sl_err = (sl_G - (cur_phi @ self.Wv))
+        sl_err = (sl_G - (cur_phi.T @ self.Wv))
         d_Wv = sl_err * cur_phi
 
         # Update
@@ -147,12 +150,12 @@ class SFReturnAgent(BaseLinearAgent):
         """
         Helper function, compute the value estimate using the lambda
         successor feature return
-        :param phi: state feature
+        :param phi: state featureat time t
         :param act: action
-        :return: value, Q(phi, act)
+        :return: value, Q(phi, act)_t
         """
-        cur_sf = self.Ws[act] @ phi  # (d, )
-        sl_G = cur_sf @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
+        cur_sf_T = phi.T @ self.Ws[act]  # (d, )  # NOTE transpose?
+        sl_G = cur_sf_T @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
         return sl_G
 
     def compute_Q_value(self, phi, act) -> float:
