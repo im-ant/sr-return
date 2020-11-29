@@ -73,12 +73,12 @@ class SFReturnAgent(BaseLinearAgent):
             self._optimize_reward_fn()
 
         # SF learning
-        if len(self.traj['phi']) > 1:
+        if len(self.traj['r']) > 0:
             self._optimize_successor_features(done)
 
         # Value learning
-        if len(self.traj['phi']) > 0:
-            self._optimize_value_fn()
+        if len(self.traj['r']) > 0:
+            self._optimize_value_fn(done)
 
         return new_act
 
@@ -101,21 +101,22 @@ class SFReturnAgent(BaseLinearAgent):
 
     def _optimize_successor_features(self, done) -> None:
         # Get current experience tuple (S, A)
-        t_idx = len(self.traj['phi']) - 2
+        t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
         cur_act = self.traj['a'][t_idx]
-        nex_phi = self.traj['phi'][t_idx + 1]
+        # nex_phi = self.traj['phi'][t_idx + 1]
 
         # Get next experience tuple if present (S', A')
         if not done:
             nex_act = self.traj['a'][t_idx+1]
+            nex_phi = self.traj['phi'][t_idx + 1]
             nex_sf = np.transpose(self.Ws[nex_act]) @ nex_phi  # NOTE transpose?
         else:
             nex_sf = 0.0
 
         # Compute SF TD errors
         cur_sf = np.transpose(self.Ws[cur_act]) @ cur_phi  # NOTE transpose?
-        sf_td_err = nex_phi + (self.lamb * self.gamma * nex_sf) - cur_sf  # (d, )
+        sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf  # (d, )
 
         d_Ws = np.transpose(np.outer(sf_td_err, cur_phi))  # NOTE transpose?
 
@@ -128,23 +129,32 @@ class SFReturnAgent(BaseLinearAgent):
             np.linalg.norm(sf_td_err)
         )
 
-    def _optimize_value_fn(self) -> None:
+    def _optimize_value_fn(self, done) -> None:
         # Get current feature
-        t_idx = len(self.traj['phi']) - 1
+        t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
-        cur_act = self.traj['a'][t_idx]
+        nex_rew = self.traj['r'][t_idx]
 
-        # Compute successor lambda return
-        sl_G = self.compute_successor_return(cur_phi, cur_act)
+        # TODO: check SF formulation and value iteration is good
 
-        sl_err = (sl_G - (cur_phi.T @ self.Wv))
-        d_Wv = sl_err * cur_phi
+        if not done:
+            # Compute successor lambda return
+            nex_phi = self.traj['phi'][t_idx+1]
+            nex_act = self.traj['a'][t_idx+1]
+            slr_V = self.compute_successor_return(nex_phi, nex_act)  # TODO change function name
+        else:
+            slr_V = 0.0
+
+        # TD learning using the SLR value
+        cur_v = cur_phi.T @ self.Wv
+        v_err = nex_rew + (self.gamma * slr_V) - cur_v
+        d_Wv = v_err * cur_phi
 
         # Update
         self.Wv += self.value_lr * d_Wv
 
         # (Log) Value function error
-        self.log_dict['value_errors'].append(sl_err)
+        self.log_dict['value_errors'].append(v_err)
 
     def compute_successor_return(self, phi, act) -> float:
         """
@@ -154,9 +164,13 @@ class SFReturnAgent(BaseLinearAgent):
         :param act: action
         :return: value, Q(phi, act)_t
         """
-        cur_sf_T = phi.T @ self.Ws[act]  # (d, )  # NOTE transpose?
-        sl_G = cur_sf_T @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
-        return sl_G
+        # TODO this function name should be a value fn not a return
+
+        sf_T = phi.T @ self.Ws[act]  # (d, )  # NOTE transpose?
+        slr_V = sf_T @ (
+                ((1-self.lamb) * self.Wv) + (self.lamb * self.Wr)
+        )
+        return slr_V
 
     def compute_Q_value(self, phi, act) -> float:
         """
