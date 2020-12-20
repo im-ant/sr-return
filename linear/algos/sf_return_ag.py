@@ -77,12 +77,15 @@ class SFReturnAgent(BaseLinearAgent):
             self._optimize_successor_features(done)
 
         # Value learning
-        if len(self.traj['phi']) > 0:
-            self._optimize_value_fn()
+        if len(self.traj['r']) > 0:
+            self._optimize_value_fn(done)
 
         return new_act
 
     def _optimize_reward_fn(self) -> None:
+        # NOTE: We learn apping phi_t -> r_{t+1} to properly account for all
+        #       rewards, even though theory says we map phi_t -> r_t.
+        #       (We can pretend r_{t+1} is r_{t})
         # Get most recent feature & reward
         t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
@@ -101,20 +104,21 @@ class SFReturnAgent(BaseLinearAgent):
         t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
         cur_act = self.traj['a'][t_idx]
+        # nex_phi = self.traj['phi'][t_idx + 1]
 
         # Get next experience tuple if present (S', A')
         if not done:
-            nex_phi = self.traj['phi'][t_idx+1]
             nex_act = self.traj['a'][t_idx+1]
-            nex_sf = self.Ws[nex_act] @ nex_phi
+            nex_phi = self.traj['phi'][t_idx + 1]
+            nex_sf = np.transpose(self.Ws[nex_act]) @ nex_phi  # NOTE transpose?
         else:
             nex_sf = 0.0
 
         # Compute SF TD errors
-        cur_sf = self.Ws[cur_act] @ cur_phi
-        sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf
+        cur_sf = np.transpose(self.Ws[cur_act]) @ cur_phi  # NOTE transpose?
+        sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf  # (d, )
 
-        d_Ws = np.outer(sf_td_err, cur_phi)
+        d_Ws = np.transpose(np.outer(sf_td_err, cur_phi))  # NOTE transpose?
 
         # Update
         self.Ws[cur_act] += self.sf_lr * d_Ws
@@ -125,35 +129,48 @@ class SFReturnAgent(BaseLinearAgent):
             np.linalg.norm(sf_td_err)
         )
 
-    def _optimize_value_fn(self) -> None:
+    def _optimize_value_fn(self, done) -> None:
         # Get current feature
-        t_idx = len(self.traj['phi']) - 1
+        t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
-        cur_act = self.traj['a'][t_idx]
+        nex_rew = self.traj['r'][t_idx]
 
-        # Compute successor lambda return
-        sl_G = self.compute_successor_return(cur_phi, cur_act)
+        # TODO: check SF formulation and value iteration is good
 
-        sl_err = (sl_G - (cur_phi @ self.Wv))
-        d_Wv = sl_err * cur_phi
+        if not done:
+            # Compute successor lambda return
+            nex_phi = self.traj['phi'][t_idx+1]
+            nex_act = self.traj['a'][t_idx+1]
+            slr_V = self.compute_successor_return(nex_phi, nex_act)  # TODO change function name
+        else:
+            slr_V = 0.0
+
+        # TD learning using the SLR value
+        cur_v = cur_phi.T @ self.Wv
+        v_err = nex_rew + (self.gamma * slr_V) - cur_v
+        d_Wv = v_err * cur_phi
 
         # Update
         self.Wv += self.value_lr * d_Wv
 
         # (Log) Value function error
-        self.log_dict['value_errors'].append(sl_err)
+        self.log_dict['value_errors'].append(v_err)
 
     def compute_successor_return(self, phi, act) -> float:
         """
         Helper function, compute the value estimate using the lambda
         successor feature return
-        :param phi: state feature
+        :param phi: state featureat time t
         :param act: action
-        :return: value, Q(phi, act)
+        :return: value, Q(phi, act)_t
         """
-        cur_sf = self.Ws[act] @ phi  # (d, )
-        sl_G = cur_sf @ (self.Wr + (self.gamma * (1.0 - self.lamb) * self.Wv))  # scalar
-        return sl_G
+        # TODO this function name should be a value fn not a return
+
+        sf_T = phi.T @ self.Ws[act]  # (d, )  # NOTE transpose?
+        slr_V = sf_T @ (
+                ((1-self.lamb) * self.Wv) + (self.lamb * self.Wr)
+        )
+        return slr_V
 
     def compute_Q_value(self, phi, act) -> float:
         """
