@@ -37,6 +37,9 @@ class SarsaLambdaAgent(BaseLinearAgent):
             'value_errors': [],
         }
 
+        # Reset eligibility trace
+        self.Z *= 0.0
+
     def step(self, phi_t: np.array, reward: float, done: bool) -> int:
         """
         Take step in the environment
