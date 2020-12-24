@@ -151,7 +151,4 @@ class ExpectedTraceAgent(BaseLinearAgent):
 # ==
 # For testing purposes only
 if __name__ == "__main__":
-    agent = LambdaAgent(n_states=5)
-
-    print(agent)
-    print(agent.V)
+    pass
