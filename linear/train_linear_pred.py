@@ -20,6 +20,7 @@ from algos.td_lambda_ag import SarsaLambdaAgent
 from algos.expt_trace_ag import ExpectedTraceAgent
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
+from envs.perf_bin_tree import PerfBinaryTreeEnv
 
 # Things to log
 LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-specific
@@ -196,9 +197,8 @@ def run_single_lienar_experiment(exp_kwargs: dict,
     # ==================================================
     # Initialize environment
     envCls = exp_kwargs['envCls']
-    environment = envCls(
-        exp_kwargs['seed']
-    )
+    env_kwargs = {'seed': exp_kwargs['seed']}
+    environment = envCls(**env_kwargs)
 
     # ==================================================
     # Initialize agent
@@ -290,6 +290,9 @@ def run_single_lienar_experiment(exp_kwargs: dict,
                 else:
                     if (episode_idx + 1) % args.log_print_freq == 0:
                         print(log_str)
+
+                #print(agent.Wq)  # TODO delete
+                #print(obs)
 
                 # ==
                 # Terminate
