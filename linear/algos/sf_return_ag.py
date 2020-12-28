@@ -43,7 +43,12 @@ class SFReturnAgent(BaseLinearAgent):
                             self.feature_dim))  # |A| * d * D
         self.Wv = np.zeros(self.feature_dim)
 
-        # (Optional) Give agent the optimal reward parameters
+        # (Optional?) Initialize the SF weights to identity for each action,
+        # corresponding to the learned weights for self.lamb = 0
+        ws_idxs = np.arange(self.feature_dim)
+        self.Ws[:, ws_idxs, ws_idxs] = 1.0
+
+        # (Optional?) Give agent the optimal reward parameters
         self.use_true_R_fn = False
 
     def begin_episode(self, phi):
