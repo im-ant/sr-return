@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from algos.sf_return_ag import SFReturnAgent
 from algos.td_lambda_ag import SarsaLambdaAgent
+from algos.expt_trace_ag import ExpectedTraceAgent
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 
@@ -37,6 +38,7 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-spec
                                               'value_loss_avg',  # agent log dict specific logs
                                               'reward_loss_avg',
                                               'sf_loss_avg',
+                                              'et_loss_avg',
                                               ])
 
 
@@ -153,6 +155,7 @@ def helper_extract_agent_log_dict(agent):
         'value_loss_avg': None,
         'reward_loss_avg': None,
         'sf_loss_avg': None,
+        'et_loss_avg': None,
     }
 
     # ==
@@ -179,6 +182,11 @@ def helper_extract_agent_log_dict(agent):
         # NOTE: it is already the norm so positive
         avg_sf_loss = np.average(ag_dict['sf_error_norms'])
         log_dict['sf_loss_avg'] = avg_sf_loss
+
+    if 'et_error_norms' in ag_dict:
+        # NOTE: it is already the norm so positive
+        avg_et_loss = np.average(ag_dict['et_error_norms'])
+        log_dict['et_loss_avg'] = avg_et_loss
 
     return log_dict
 
@@ -302,10 +310,14 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     num_episodes = config['Training'].getint('num_episodes')
 
     # Get environment attributes
-    envCls = globals()[config['Env']['cls_string']]  # NOTE super hacky
+    cs_envCls = config['Env']['cls_string']
+    envCls_strs = [str(e.strip()) for e in cs_envCls.split(',')]
+    envCls_list = [globals()[e] for e in envCls_strs]  # NOTE super hacky
 
     # Get agent attributes
-    agentCls = globals()[config['Agent']['cls_string']]  # NOTE super hacky
+    cs_agentCls = config['Agent']['cls_string']
+    agentCls_strs = [str(e.strip()) for e in cs_agentCls.split(',')]
+    agentCls_list = [globals()[e] for e in agentCls_strs]  # NOTE super hacky
     use_true_R_fn = config['Agent'].getboolean('use_true_R_fn')
 
     # Get comma-sep list of attributes
@@ -316,8 +328,8 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
 
     # Get the list of attributes
     indep_vars_dict = {
-        'envCls': [envCls],
-        'agentCls': [agentCls],
+        'envCls': envCls_list,
+        'agentCls': agentCls_list,
         'num_episodes': [num_episodes],
         'use_true_R_fn': [use_true_R_fn],
         'gamma': [float(e.strip()) for e in cs_gamma.split(',')],

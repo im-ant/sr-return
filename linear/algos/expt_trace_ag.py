@@ -1,6 +1,7 @@
 # =============================================================================
-# SARSA(lambda) algorithm with eligibility traces from Sutton & Barto. Adapted
-# from chapter 12.2 TD(lambda) and SARSA(lambda)
+# Expected Eligibility Trace Algorithm from van Hasselt et al.
+# https://arxiv.org/abs/2007.01839
+# Linear implementation
 #
 # Author: Anthony G. Chen
 # =============================================================================
@@ -13,7 +14,7 @@ import numpy as np
 from algos.base import BaseLinearAgent
 
 
-class SarsaLambdaAgent(BaseLinearAgent):
+class ExpectedTraceAgent(BaseLinearAgent):
     def __init__(self, feature_dim,
                  num_actions,
                  gamma=0.9,
@@ -26,17 +27,23 @@ class SarsaLambdaAgent(BaseLinearAgent):
         """
         super().__init__(feature_dim, num_actions, gamma=gamma, lr=lr, seed=seed)
         self.lamb = lamb
+        self.eta = 0.0  # for now use just the full expected trace
+        self.value_lr = lr
+        self.et_lr = lr
 
         # Initialize Q function and trace
         self.Wq = np.zeros((self.feature_dim, self.num_actions))  # TODO check correct
         self.Z = np.zeros((self.feature_dim, self.num_actions))  # TODO check correct
+        self.Wz = np.zeros((self.num_actions,
+                            self.feature_dim,
+                            self.feature_dim))  # trace params
 
     def begin_episode(self, phi):
         super().begin_episode(phi)
         self.log_dict = {
             'value_errors': [],
+            'et_error_norms': [],
         }
-
         # Reset eligibility trace
         self.Z *= 0.0
 
@@ -74,12 +81,20 @@ class SarsaLambdaAgent(BaseLinearAgent):
         rew = self.traj['r'][t_idx]
 
         # ==
-        # Update trace
+        # Update transient trace
         act_vec = np.zeros(self.num_actions)
         act_vec[cur_act] = 1.0
         grad_Qw = np.outer(cur_phi, act_vec)
 
         self.Z = (self.lamb * self.gamma) * self.Z + grad_Qw
+
+        # ==
+        # Supervised learning of expected trace  # TODO make sure below is okay
+        cur_et = np.transpose(self.Wz[cur_act]) @ cur_phi  # (d, )
+        et_err = self.Z[:, cur_act] - cur_et  # (d, )
+        d_Wz = np.transpose(np.outer(et_err, cur_phi.T))  # (d, d)
+
+        self.Wz[cur_act] += self.et_lr * d_Wz  # update ET
 
         # ==
         # Update Q function
@@ -93,14 +108,21 @@ class SarsaLambdaAgent(BaseLinearAgent):
         cur_q = self.compute_Q_value(cur_phi, cur_act)
         td_err = rew + (self.gamma * nex_q) - cur_q
 
+        # Parameter udpates with ET
+        cur_et = np.matmul(
+            np.transpose(self.Wz, axes=(0, 2, 1)), cur_phi
+        )  # (|A|, d, d) x (d,) -> (|A|, d)
+
         # Parameter updates
-        del_Wq = td_err * self.Z
+        del_Wq = td_err * np.transpose(cur_et)
         self.Wq = self.Wq + (self.lr * del_Wq)
 
         # ==
         # Logging losses
         self.log_dict['value_errors'].append(td_err)
-        pass
+        self.log_dict['et_error_norms'].append(
+            np.linalg.norm(et_err)
+        )
 
     def compute_Q_value(self, phi, act) -> float:
         """
@@ -129,7 +151,4 @@ class SarsaLambdaAgent(BaseLinearAgent):
 # ==
 # For testing purposes only
 if __name__ == "__main__":
-    agent = LambdaAgent(n_states=5)
-
-    print(agent)
-    print(agent.V)
+    pass
