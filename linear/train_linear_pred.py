@@ -21,6 +21,7 @@ from algos.expt_trace_ag import ExpectedTraceAgent
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 from envs.perf_bin_tree import PerfBinaryTreeEnv
+import utils.mdp_utils as mut
 
 # Things to log
 LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-specific
@@ -30,12 +31,14 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-spec
                                               'gamma',
                                               'lr',
                                               'lamb',
+                                              'eta_trace',
                                               'use_true_R_fn',
                                               'episode_idx',  # episode-specific logs
                                               'total_steps',
                                               'cumulative_reward',
                                               'v_fn_rmse',
                                               'sf_G_rmse',
+                                              'sf_matrix_rmse',
                                               'value_loss_avg',  # agent log dict specific logs
                                               'reward_loss_avg',
                                               'sf_loss_avg',
@@ -61,87 +64,34 @@ def init_logger(logging_path: str) -> logging.Logger:
     return logger
 
 
-def compute_rmse(vec_a, vec_b):
-    sq_err = (vec_a - vec_b) ** 2
-    return np.sqrt(np.mean(sq_err))
-
-
-def solve_value_fn(env, gamma):
+def helper_initialize_agent(exp_kwargs: dict, environment):
     """
-    Solve the (tabular) value function for each state
-    :return: tabular reward function, shaped (n_states, )
+    Helper method to initialize an agent object
+    :param exp_kwargs: dictionary of parameters
+    :param environment: gym environment
+    :return: agent object
     """
-    # Transition matrix
-    n_states = env.get_num_states()
-    P_trans = env.get_transition_matrix()
+    agentCls = exp_kwargs['agentCls']
 
-    # Reward function
-    R_fn = env.get_reward_function()
+    # Share parameters
+    agent_kwargs = {
+        'gamma': exp_kwargs['gamma'],
+        'lamb': exp_kwargs['lamb'],
+        'lr': exp_kwargs['lr'],
+        'seed': exp_kwargs['seed'],
+    }
 
-    # Solve and return
-    c_mat = (np.identity(n_states) - (gamma * P_trans))
-    v_fn = np.linalg.inv(c_mat) @ R_fn
+    # Specific parameters
+    if agentCls.__name__ == 'SFReturnAgent':
+        agent_kwargs['eta_trace'] = exp_kwargs['eta_trace']
 
-    return v_fn
-
-
-def solve_linear_sf(env, discount_factor):
-    """
-    Solve for the linear successor features given an environment
-    :param discount_factor: (gamma * lamb)
-    :return:
-    """
-    phiMat = env.get_feature_matrix()
-    transMat = env.get_transition_matrix()
-    p_n_states = np.shape(transMat)[0]
-
-    cMat = np.identity(p_n_states) - (discount_factor * transMat)
-    qMat = cMat @ phiMat
-
-    # Solve
-    Z = np.linalg.inv(qMat.T @ qMat) @ qMat.T @ transMat @ phiMat
-    return Z
-
-
-def compute_value_rmse(env, agent, true_v_fn):
-    """
-    Compute the RMSE for the value function of a given agent
-    and environment
-
-    :return: scalar RMSE
-    """
-    n_states = env.get_num_states()
-
-    esti_v_fn = np.empty(n_states)
-
-    for s_n in range(n_states):
-        # Get state features
-        s_phi = env.state_2_features(s_n)
-
-        # Compute the value estimate TODO change this
-        # NOTE: assumes only a single action is available
-        # TODO: make it into compute V function to marginalize over actions?
-        esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
-
-    return compute_rmse(esti_v_fn, true_v_fn)
-
-
-def compute_sf_ret_rmse(env, agent, true_v_fn):
-    """
-    Compute RMSE for the lambda successor return, if possible
-    :return: scalar RMSE
-    """
-    if not hasattr(agent, 'compute_successor_return'):
-        return None
-
-    n_states = env.get_num_states()
-    esti_v_fn = np.empty(n_states)
-    for s_n in range(n_states):
-        s_phi = env.state_2_features(s_n)  # state features
-        esti_v_fn[s_n] = agent.compute_successor_return(
-            s_phi, 0
-        )  # compute value
-    return compute_rmse(esti_v_fn, true_v_fn)
+    # Initialize and return
+    agent = agentCls(
+        feature_dim=environment.observation_space.shape[0],  # assume linear
+        num_actions=environment.action_space.n,
+        **agent_kwargs
+    )
+    return agent
 
 
 def helper_extract_agent_log_dict(agent):
@@ -192,7 +142,7 @@ def helper_extract_agent_log_dict(agent):
     return log_dict
 
 
-def run_single_lienar_experiment(exp_kwargs: dict,
+def run_single_linear_experiment(exp_kwargs: dict,
                                  args, logger=None):
     # ==================================================
     # Initialize environment
@@ -202,18 +152,7 @@ def run_single_lienar_experiment(exp_kwargs: dict,
 
     # ==================================================
     # Initialize agent
-    agentCls = exp_kwargs['agentCls']
-    agent_kwargs = {
-        'gamma': exp_kwargs['gamma'],
-        'lamb': exp_kwargs['lamb'],
-        'lr': exp_kwargs['lr'],
-        'seed': exp_kwargs['seed'],
-    }
-    agent = agentCls(
-        feature_dim=environment.observation_space.shape[0],  # assume linear
-        num_actions=environment.action_space.n,
-        **agent_kwargs
-    )
+    agent = helper_initialize_agent(exp_kwargs, environment)
 
     # ==================================================
     # Pre-compute and pre-initialize
@@ -226,10 +165,16 @@ def run_single_lienar_experiment(exp_kwargs: dict,
         else:
             exp_log_dict[k] = exp_kwargs[k]
 
-    # Compute the true Boyan's chain value function
-    true_v_fn = solve_value_fn(environment, exp_kwargs['gamma'])
+    # Compute the true MDP value function
+    true_v_fn = mut.solve_value_fn(environment, exp_kwargs['gamma'])
+
+    # Compute the true MDP successor feature
+    true_sf_mat = mut.solve_successor_feature(
+        environment, (exp_kwargs['gamma'] * exp_kwargs['lamb'])
+    )
 
     # (Optional) Give agent the best fit reward fn weights
+    # TODO should move this to either utils or something else but not in env
     if exp_kwargs['use_true_R_fn']:
         bf_Wr = environment.solve_linear_reward_parameters()
         agent.Wr = bf_Wr
@@ -262,8 +207,16 @@ def run_single_lienar_experiment(exp_kwargs: dict,
 
                 # ==
                 # Compute Value function RMSE
-                v_fn_rmse = compute_value_rmse(environment, agent, true_v_fn)
-                sf_G_rmse = compute_sf_ret_rmse(environment, agent, true_v_fn)
+                v_fn_rmse = mut.evaluate_value_rmse(environment, agent, true_v_fn)
+                sf_G_rmse = mut.evaluate_sf_ret_rmse(environment, agent, true_v_fn)
+
+                # ==
+                # Optionally compute successor feature RMSE (NOTE: hard-coded)
+                sf_mat_rmse = None
+                if exp_kwargs['agentCls'].__name__ == 'SFReturnAgent':
+                    sf_mat_rmse = mut.evaluate_sf_mat_rmse(
+                        environment, agent, true_sf_mat
+                    )
 
                 # ==
                 # Episode log items
@@ -274,6 +227,7 @@ def run_single_lienar_experiment(exp_kwargs: dict,
                 epis_log_dict['cumulative_reward'] = cumulative_reward
                 epis_log_dict['v_fn_rmse'] = v_fn_rmse
                 epis_log_dict['sf_G_rmse'] = sf_G_rmse
+                epis_log_dict['sf_matrix_rmse'] = sf_mat_rmse
 
                 # ==
                 # Compute losses from the agent logs
@@ -290,9 +244,6 @@ def run_single_lienar_experiment(exp_kwargs: dict,
                 else:
                     if (episode_idx + 1) % args.log_print_freq == 0:
                         print(log_str)
-
-                #print(agent.Wq)  # TODO delete
-                #print(obs)
 
                 # ==
                 # Terminate
@@ -326,6 +277,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     # Get comma-sep list of attributes
     cs_gamma = config['Agent']['cs_gamma']
     cs_lamb = config['Agent']['cs_lamb']
+    cs_eta_trace = config['Agent']['cs_eta_trace']
     cs_lr = config['Agent']['cs_lr']
     cs_seed = config['Training']['cs_seed']
 
@@ -337,6 +289,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
         'use_true_R_fn': [use_true_R_fn],
         'gamma': [float(e.strip()) for e in cs_gamma.split(',')],
         'lamb': [float(e.strip()) for e in cs_lamb.split(',')],
+        'eta_trace': [float(e.strip()) for e in cs_eta_trace.split(',')],
         'lr': [float(e.strip()) for e in cs_lr.split(',')],
         'seed': [int(e.strip()) for e in cs_seed.split(',')],
     }
@@ -367,7 +320,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     for attri_tup in attri_iterable:
         exp_kwargs = {indep_vars_keys[i]: attri_tup[i]
                       for i in range(len(attri_tup))}
-        run_single_lienar_experiment(exp_kwargs, args, logger=logger)
+        run_single_linear_experiment(exp_kwargs, args, logger=logger)
 
 
 if __name__ == "__main__":

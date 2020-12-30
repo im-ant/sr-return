@@ -18,6 +18,7 @@ class SFReturnAgent(BaseLinearAgent):
                  num_actions,
                  gamma=0.9,
                  lamb=0.8,
+                 eta_trace=0.0,
                  lr=0.1,
                  seed=0):
         """
@@ -32,6 +33,7 @@ class SFReturnAgent(BaseLinearAgent):
         super().__init__(feature_dim, num_actions, gamma=gamma, lr=lr, seed=seed)
 
         self.lamb = lamb
+        self.eta_trace = eta_trace  # value fn bwd trace
         self.reward_lr = lr  # different learning rates?
         self.value_lr = lr
         self.sf_lr = lr
@@ -42,6 +44,9 @@ class SFReturnAgent(BaseLinearAgent):
                             self.feature_dim,
                             self.feature_dim))  # |A| * d * D
         self.Wv = np.zeros(self.feature_dim)
+
+        # Trace
+        self.Zv = np.zeros(self.feature_dim)
 
         # (Optional?) Initialize the SF weights to identity for each action,
         # corresponding to the learned weights for self.lamb = 0
@@ -59,6 +64,9 @@ class SFReturnAgent(BaseLinearAgent):
             'sf_error_norms': [],
             'value_errors': [],
         }
+
+        # Reset trace
+        self.Zv = self.Zv * 0.0
 
     def step(self, phi_t: np.array, reward: float, done: bool) -> int:
         # Get new action based on state
@@ -135,13 +143,20 @@ class SFReturnAgent(BaseLinearAgent):
         )
 
     def _optimize_value_fn(self, done) -> None:
-        # Get current feature
+        # ==
+        # Unpack current feature
         t_idx = len(self.traj['r']) - 1
         cur_phi = self.traj['phi'][t_idx]
         nex_rew = self.traj['r'][t_idx]
 
-        # TODO: check SF formulation and value iteration is good
+        # ==
+        # Update trace (not action conditioned)
+        grad_Vw = cur_phi
+        self.Zv = (self.eta_trace * self.gamma) * self.Zv + grad_Vw
 
+        # ==
+        # Compute the lambda SF value function return
+        # TODO: check SF formulation and value iteration is good
         if not done:
             # Compute successor lambda return
             nex_phi = self.traj['phi'][t_idx+1]
@@ -150,16 +165,17 @@ class SFReturnAgent(BaseLinearAgent):
         else:
             slr_V = 0.0
 
+        # ==
         # TD learning using the SLR value
         cur_v = cur_phi.T @ self.Wv
-        v_err = nex_rew + (self.gamma * slr_V) - cur_v
-        d_Wv = v_err * cur_phi
+        v_td_err = nex_rew + (self.gamma * slr_V) - cur_v
+        del_Wv = v_td_err * self.Zv
 
         # Update
-        self.Wv += self.value_lr * d_Wv
+        self.Wv += self.value_lr * del_Wv
 
         # (Log) Value function error
-        self.log_dict['value_errors'].append(v_err)
+        self.log_dict['value_errors'].append(v_td_err)
 
     def compute_successor_return(self, phi, act) -> float:
         """
