@@ -21,7 +21,7 @@ def compute_rmse(vec_a, vec_b) -> float:
 
 def solve_value_fn(env: gym.Env, gamma: float) -> np.ndarray:
     """
-    Solve the value functio for each state in an environment
+    Solve the value function for each state in an environment
     :param env: gym environment
     :param gamma: discount factor
     :return:
@@ -40,9 +40,30 @@ def solve_value_fn(env: gym.Env, gamma: float) -> np.ndarray:
     return v_fn
 
 
-def solve_linear_sf(env: gym.Env, discount_factor: float) -> np.ndarray:
+def solve_successor_feature(env: gym.Env, gamma: float) -> np.ndarray:
+    """
+    Analytically solve for the successor feature
+    :param env: gym environment
+    :param gamma: discount factor
+    :return: (N, d) numpy matrix of successor feature for each state
+    """
+    # Transition matrix
+    n_states = env.get_num_states()
+    P_trans = env.get_transition_matrix()
+
+    # Feature matrix
+    Phi_mat = env.get_feature_matrix()
+
+    # Solve and return
+    c_mat = (np.identity(n_states) - (gamma * P_trans))
+    sf_mat = np.linalg.inv(c_mat) @ Phi_mat
+    return sf_mat
+
+
+def solve_linear_sf_param(env: gym.Env, discount_factor: float) -> np.ndarray:
     """
     Solve for the linear successor features given an environment
+    TODO NOTE this is deprecated. Not sure if correct.
     :param env: gym environment
     :param discount_factor: (gamma * lamb)
     :return:
@@ -59,7 +80,7 @@ def solve_linear_sf(env: gym.Env, discount_factor: float) -> np.ndarray:
     return Z
 
 
-def compute_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
+def evaluate_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
     """
     Compute the RMSE for the value function of a given agent
     and environment
@@ -67,7 +88,6 @@ def compute_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
     :return: scalar RMSE
     """
     n_states = env.get_num_states()
-
     esti_v_fn = np.empty(n_states)
 
     for s_n in range(n_states):
@@ -82,7 +102,7 @@ def compute_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
-def compute_sf_ret_rmse(env, agent, true_v_fn) -> float:
+def evaluate_sf_ret_rmse(env, agent, true_v_fn) -> float:
     """
     Compute RMSE for the lambda successor return, if possible
     :return: scalar RMSE
@@ -98,6 +118,17 @@ def compute_sf_ret_rmse(env, agent, true_v_fn) -> float:
             s_phi, 0
         )  # compute value
     return compute_rmse(esti_v_fn, true_v_fn)
+
+
+def evaluate_sf_rmse(env, agent, true_sf_fn) -> float:
+    """
+    Compute the RMSE for the successor feature if possible
+    :param env:
+    :param agent:
+    :param true_sf:
+    :return:
+    """
+    pass
 
 
 if __name__ == "__main__":
