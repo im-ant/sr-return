@@ -38,6 +38,7 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-spec
                                               'cumulative_reward',
                                               'v_fn_rmse',
                                               'sf_G_rmse',
+                                              'sf_matrix_rmse',
                                               'value_loss_avg',  # agent log dict specific logs
                                               'reward_loss_avg',
                                               'sf_loss_avg',
@@ -164,8 +165,13 @@ def run_single_linear_experiment(exp_kwargs: dict,
         else:
             exp_log_dict[k] = exp_kwargs[k]
 
-    # Compute the true Boyan's chain value function
+    # Compute the true MDP value function
     true_v_fn = mut.solve_value_fn(environment, exp_kwargs['gamma'])
+
+    # Compute the true MDP successor feature
+    true_sf_mat = mut.solve_successor_feature(
+        environment, (exp_kwargs['gamma'] * exp_kwargs['lamb'])
+    )
 
     # (Optional) Give agent the best fit reward fn weights
     # TODO should move this to either utils or something else but not in env
@@ -201,8 +207,16 @@ def run_single_linear_experiment(exp_kwargs: dict,
 
                 # ==
                 # Compute Value function RMSE
-                v_fn_rmse = mut.compute_value_rmse(environment, agent, true_v_fn)
-                sf_G_rmse = mut.compute_sf_ret_rmse(environment, agent, true_v_fn)
+                v_fn_rmse = mut.evaluate_value_rmse(environment, agent, true_v_fn)
+                sf_G_rmse = mut.evaluate_sf_ret_rmse(environment, agent, true_v_fn)
+
+                # ==
+                # Optionally compute successor feature RMSE (NOTE: hard-coded)
+                sf_mat_rmse = None
+                if exp_kwargs['agentCls'].__name__ == 'SFReturnAgent':
+                    sf_mat_rmse = mut.evaluate_sf_mat_rmse(
+                        environment, agent, true_sf_mat
+                    )
 
                 # ==
                 # Episode log items
@@ -213,6 +227,7 @@ def run_single_linear_experiment(exp_kwargs: dict,
                 epis_log_dict['cumulative_reward'] = cumulative_reward
                 epis_log_dict['v_fn_rmse'] = v_fn_rmse
                 epis_log_dict['sf_G_rmse'] = sf_G_rmse
+                epis_log_dict['sf_matrix_rmse'] = sf_mat_rmse
 
                 # ==
                 # Compute losses from the agent logs

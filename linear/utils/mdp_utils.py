@@ -120,15 +120,28 @@ def evaluate_sf_ret_rmse(env, agent, true_v_fn) -> float:
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
-def evaluate_sf_rmse(env, agent, true_sf_fn) -> float:
+def evaluate_sf_mat_rmse(env, agent, true_sf_mat) -> float:
     """
-    Compute the RMSE for the successor feature if possible
+    Compute the RMSE for the successor feature matrix
     :param env:
     :param agent:
-    :param true_sf:
+    :param true_sf_mat:  (N, d) true successor feature matrix
     :return:
     """
-    pass
+    n_states = env.get_num_states()
+    d_features = env.observation_space.shape[0]
+    esti_sf_mat = np.empty((n_states, d_features))
+
+    for s_n in range(n_states):
+        # Get state features
+        s_phi = env.state_2_features(s_n)
+
+        # Compute the estimate SF
+        # TODO: hacky, assumes only single action is available, should fix
+        sf_T = s_phi.T @ agent.Ws[0]  # (d, )
+        esti_sf_mat[s_n] = sf_T
+
+    return compute_rmse(esti_sf_mat, true_sf_mat)
 
 
 if __name__ == "__main__":
