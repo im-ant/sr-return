@@ -223,7 +223,7 @@ def helper_extract_agent_log_dict(agent):
     return log_dict
 
 
-def run_single_lienar_experiment(exp_kwargs: dict,
+def run_single_linear_experiment(exp_kwargs: dict,
                                  args, logger=None):
     # ==================================================
     # Initialize environment
@@ -386,7 +386,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     for attri_tup in attri_iterable:
         exp_kwargs = {indep_vars_keys[i]: attri_tup[i]
                       for i in range(len(attri_tup))}
-        run_single_lienar_experiment(exp_kwargs, args, logger=logger)
+        run_single_linear_experiment(exp_kwargs, args, logger=logger)
 
 
 if __name__ == "__main__":
