@@ -21,6 +21,7 @@ from algos.expt_trace_ag import ExpectedTraceAgent
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 from envs.perf_bin_tree import PerfBinaryTreeEnv
+import utils.mdp_utils as mut
 
 # Things to log
 LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-specific
@@ -60,89 +61,6 @@ def init_logger(logging_path: str) -> logging.Logger:
     logger.addHandler(file_handler)
 
     return logger
-
-
-def compute_rmse(vec_a, vec_b):
-    sq_err = (vec_a - vec_b) ** 2
-    return np.sqrt(np.mean(sq_err))
-
-
-def solve_value_fn(env, gamma):
-    """
-    Solve the (tabular) value function for each state
-    :return: tabular reward function, shaped (n_states, )
-    """
-    # Transition matrix
-    n_states = env.get_num_states()
-    P_trans = env.get_transition_matrix()
-
-    # Reward function
-    R_fn = env.get_reward_function()
-
-    # Solve and return
-    c_mat = (np.identity(n_states) - (gamma * P_trans))
-    v_fn = np.linalg.inv(c_mat) @ R_fn
-
-    return v_fn
-
-
-def solve_linear_sf(env, discount_factor):
-    """
-    Solve for the linear successor features given an environment
-    :param discount_factor: (gamma * lamb)
-    :return:
-    """
-    phiMat = env.get_feature_matrix()
-    transMat = env.get_transition_matrix()
-    p_n_states = np.shape(transMat)[0]
-
-    cMat = np.identity(p_n_states) - (discount_factor * transMat)
-    qMat = cMat @ phiMat
-
-    # Solve
-    Z = np.linalg.inv(qMat.T @ qMat) @ qMat.T @ transMat @ phiMat
-    return Z
-
-
-def compute_value_rmse(env, agent, true_v_fn):
-    """
-    Compute the RMSE for the value function of a given agent
-    and environment
-
-    :return: scalar RMSE
-    """
-    n_states = env.get_num_states()
-
-    esti_v_fn = np.empty(n_states)
-
-    for s_n in range(n_states):
-        # Get state features
-        s_phi = env.state_2_features(s_n)
-
-        # Compute the value estimate TODO change this
-        # NOTE: assumes only a single action is available
-        # TODO: make it into compute V function to marginalize over actions?
-        esti_v_fn[s_n] = agent.compute_Q_value(s_phi, 0)
-
-    return compute_rmse(esti_v_fn, true_v_fn)
-
-
-def compute_sf_ret_rmse(env, agent, true_v_fn):
-    """
-    Compute RMSE for the lambda successor return, if possible
-    :return: scalar RMSE
-    """
-    if not hasattr(agent, 'compute_successor_return'):
-        return None
-
-    n_states = env.get_num_states()
-    esti_v_fn = np.empty(n_states)
-    for s_n in range(n_states):
-        s_phi = env.state_2_features(s_n)  # state features
-        esti_v_fn[s_n] = agent.compute_successor_return(
-            s_phi, 0
-        )  # compute value
-    return compute_rmse(esti_v_fn, true_v_fn)
 
 
 def helper_initialize_agent(exp_kwargs: dict, environment):
@@ -247,9 +165,10 @@ def run_single_linear_experiment(exp_kwargs: dict,
             exp_log_dict[k] = exp_kwargs[k]
 
     # Compute the true Boyan's chain value function
-    true_v_fn = solve_value_fn(environment, exp_kwargs['gamma'])
+    true_v_fn = mut.solve_value_fn(environment, exp_kwargs['gamma'])
 
     # (Optional) Give agent the best fit reward fn weights
+    # TODO should move this to either utils or something else but not in env
     if exp_kwargs['use_true_R_fn']:
         bf_Wr = environment.solve_linear_reward_parameters()
         agent.Wr = bf_Wr
@@ -282,8 +201,8 @@ def run_single_linear_experiment(exp_kwargs: dict,
 
                 # ==
                 # Compute Value function RMSE
-                v_fn_rmse = compute_value_rmse(environment, agent, true_v_fn)
-                sf_G_rmse = compute_sf_ret_rmse(environment, agent, true_v_fn)
+                v_fn_rmse = mut.compute_value_rmse(environment, agent, true_v_fn)
+                sf_G_rmse = mut.compute_sf_ret_rmse(environment, agent, true_v_fn)
 
                 # ==
                 # Episode log items
