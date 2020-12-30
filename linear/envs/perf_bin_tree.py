@@ -166,7 +166,7 @@ class PerfBinaryTreeEnv(gym.Env):
     def get_feature_matrix(self):
         """
         Helper function to get the state to features mapping matrix
-        :return: (self.n_states+1, self.feature_dim) np matrix
+        :return: (self.n_states, self.feature_dim) np matrix
         """
         phi_mat = np.empty((self.n_states, self.feature_dim))
         for s_idx in range(self.n_states):
