@@ -30,6 +30,7 @@ LogTupStruct = namedtuple('Log', field_names=['num_episodes',  # experiment-spec
                                               'gamma',
                                               'lr',
                                               'lamb',
+                                              'eta_trace',
                                               'use_true_R_fn',
                                               'episode_idx',  # episode-specific logs
                                               'total_steps',
@@ -144,6 +145,36 @@ def compute_sf_ret_rmse(env, agent, true_v_fn):
     return compute_rmse(esti_v_fn, true_v_fn)
 
 
+def helper_initialize_agent(exp_kwargs: dict, environment):
+    """
+    Helper method to initialize an agent object
+    :param exp_kwargs: dictionary of parameters
+    :param environment: gym environment
+    :return: agent object
+    """
+    agentCls = exp_kwargs['agentCls']
+
+    # Share parameters
+    agent_kwargs = {
+        'gamma': exp_kwargs['gamma'],
+        'lamb': exp_kwargs['lamb'],
+        'lr': exp_kwargs['lr'],
+        'seed': exp_kwargs['seed'],
+    }
+
+    # Specific parameters
+    if agentCls.__name__ == 'SFReturnAgent':
+        agent_kwargs['eta_trace'] = exp_kwargs['eta_trace']
+
+    # Initialize and return
+    agent = agentCls(
+        feature_dim=environment.observation_space.shape[0],  # assume linear
+        num_actions=environment.action_space.n,
+        **agent_kwargs
+    )
+    return agent
+
+
 def helper_extract_agent_log_dict(agent):
     """
     Helper method to extract the agent's logged items for the logger
@@ -202,18 +233,7 @@ def run_single_lienar_experiment(exp_kwargs: dict,
 
     # ==================================================
     # Initialize agent
-    agentCls = exp_kwargs['agentCls']
-    agent_kwargs = {
-        'gamma': exp_kwargs['gamma'],
-        'lamb': exp_kwargs['lamb'],
-        'lr': exp_kwargs['lr'],
-        'seed': exp_kwargs['seed'],
-    }
-    agent = agentCls(
-        feature_dim=environment.observation_space.shape[0],  # assume linear
-        num_actions=environment.action_space.n,
-        **agent_kwargs
-    )
+    agent = helper_initialize_agent(exp_kwargs, environment)
 
     # ==================================================
     # Pre-compute and pre-initialize
@@ -291,9 +311,6 @@ def run_single_lienar_experiment(exp_kwargs: dict,
                     if (episode_idx + 1) % args.log_print_freq == 0:
                         print(log_str)
 
-                #print(agent.Wq)  # TODO delete
-                #print(obs)
-
                 # ==
                 # Terminate
                 break
@@ -326,6 +343,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
     # Get comma-sep list of attributes
     cs_gamma = config['Agent']['cs_gamma']
     cs_lamb = config['Agent']['cs_lamb']
+    cs_eta_trace = config['Agent']['cs_eta_trace']
     cs_lr = config['Agent']['cs_lr']
     cs_seed = config['Training']['cs_seed']
 
@@ -337,6 +355,7 @@ def run_experiments(args, config: configparser.ConfigParser, logger=None):
         'use_true_R_fn': [use_true_R_fn],
         'gamma': [float(e.strip()) for e in cs_gamma.split(',')],
         'lamb': [float(e.strip()) for e in cs_lamb.split(',')],
+        'eta_trace': [float(e.strip()) for e in cs_eta_trace.split(',')],
         'lr': [float(e.strip()) for e in cs_lr.split(',')],
         'seed': [int(e.strip()) for e in cs_seed.split(',')],
     }
