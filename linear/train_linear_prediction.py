@@ -9,7 +9,6 @@ import configparser
 import dataclasses
 import logging
 import os
-from itertools import product
 
 import gym
 import hydra
@@ -194,6 +193,7 @@ def write_post_episode_log(cfg: DictConfig,
         'envCls_name': cfg.env.cls_string,
         'agentCls_name': cfg.agent.cls_string,
         'seed': cfg.training.seed,  # global seed
+        'lr': cfg.agent.lr,
     }
 
     # Assume all agent kwargs are available in log
@@ -322,4 +322,3 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
-
