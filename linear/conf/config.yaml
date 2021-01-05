@@ -1,0 +1,19 @@
+defaults:
+  - agent: sf_return
+
+training:
+  num_episodes: 10
+  seed: 0
+
+logging:
+  dir_path: './'
+  print_freq: 100
+
+env:
+  cls_string: 'PerfBinaryTreeEnv'
+  kwargs: {}
+
+agent:
+  lr: 0.1
+  kwargs:
+    gamma: 0.9
