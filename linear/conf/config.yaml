@@ -1,8 +1,9 @@
 defaults:
   - agent: sf_return
+  - hydra/job_logging: disabled
 
 training:
-  num_episodes: 10
+  num_episodes: 20
   seed: 0
 
 logging:
