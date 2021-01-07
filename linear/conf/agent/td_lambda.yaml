@@ -1,0 +1,4 @@
+# @package _group_
+cls_string: "SarsaLambdaAgent"
+kwargs:
+  lamb: 0.0  # trace decay
