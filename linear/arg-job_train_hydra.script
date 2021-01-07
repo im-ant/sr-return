@@ -27,8 +27,10 @@ python -u train_linear_prediction.py --multirun \
     training.num_episodes=100 \
     training.seed=2,4,6,8,10,12,14,16,18,20 \
     env.cls_string=PerfBinaryTreeEnv \
-    agent.lr=0.01,0.1 \
-    agent.kwargs.gamma=0.0 \
+    agent.lr=0.001,0.01,0.03,0.06,0.1 \
+    agent.kwargs.gamma=0.9 \
+    agent.kwargs.lamb=0.0,0.3,0.5,0.7,0.9,0.95,0.99,1.0 \
+    agent.kwargs.eta_trace=0.0,0.3,0.5,0.7,0.9,0.95,0.99,1.0 \
 
 # (4) Copy things over to scratch?
 # cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/
