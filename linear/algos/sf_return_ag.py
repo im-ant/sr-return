@@ -20,6 +20,8 @@ class SFReturnAgent(BaseLinearAgent):
                  lamb=0.8,
                  eta_trace=0.0,
                  lr=0.1,
+                 use_true_reward_params=False,
+                 use_true_sf_params=False,
                  seed=0):
         """
         TODO define arguments
@@ -54,7 +56,7 @@ class SFReturnAgent(BaseLinearAgent):
         self.Ws[:, ws_idxs, ws_idxs] = 1.0
 
         # (Optional?) Give agent the optimal reward parameters
-        self.use_true_R_fn = False
+        self.use_true_R_fn = use_true_reward_params  # TODO change attribute name to be identical to input arg
 
     def begin_episode(self, phi):
         super().begin_episode(phi)
