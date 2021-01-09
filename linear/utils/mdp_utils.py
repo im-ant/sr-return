@@ -82,6 +82,22 @@ def solve_linear_sf_param(env: gym.Env, gamma: float) -> np.ndarray:
     return Z
 
 
+def solve_linear_reward_param(env: gym.Env) -> np.ndarray:
+    """
+    Solve for the linear (one-step) reward parameter vector.
+    :param env:  gym environment
+    :return: (d, ) reward function parameters
+    """
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    rewVec = env.get_reward_function()  # (N, 1) reward vec
+
+    # Project and solve
+    solMat = np.linalg.inv((phiMat.T @ phiMat))
+    Wr = solMat @ phiMat.T @ rewVec
+
+    return Wr
+
+
 def evaluate_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
     """
     Compute the RMSE for the value function of a given agent
