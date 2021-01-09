@@ -60,23 +60,25 @@ def solve_successor_feature(env: gym.Env, gamma: float) -> np.ndarray:
     return sf_mat
 
 
-def solve_linear_sf_param(env: gym.Env, discount_factor: float) -> np.ndarray:
+def solve_linear_sf_param(env: gym.Env, gamma: float) -> np.ndarray:
     """
-    Solve for the linear successor features given an environment
-    TODO NOTE this is deprecated. Not sure if correct.
+    Solve for the linear successor feature parameter matrix. Given an
+    environment, extract the transition and feature matrices. Solve the
+    best linear approximation to the perfect successor feature.
+
     :param env: gym environment
-    :param discount_factor: (gamma * lamb)
-    :return:
+    :param gamma: float discount factor
+    :return: np.array of (d, d) successor matrix
     """
-    phiMat = env.get_feature_matrix()
-    transMat = env.get_transition_matrix()
-    p_n_states = np.shape(transMat)[0]
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    transMat = env.get_transition_matrix()  # (N, N) trans mat
+    p_n_states = np.shape(transMat)[0]  # N
 
-    cMat = np.identity(p_n_states) - (discount_factor * transMat)
-    qMat = cMat @ phiMat
+    # Project and solve
+    cMat = np.identity(p_n_states) - (gamma * transMat)
+    proj_cMat = phiMat.T @ cMat @ phiMat
+    Z = np.linalg.inv(proj_cMat) @ (phiMat.T @ phiMat)
 
-    # Solve
-    Z = np.linalg.inv(qMat.T @ qMat) @ qMat.T @ transMat @ phiMat
     return Z
 
 
