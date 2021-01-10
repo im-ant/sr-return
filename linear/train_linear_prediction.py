@@ -28,6 +28,7 @@ import utils.mdp_utils as mut
 class LogTupStruct:
     num_episodes: int = None
     envCls_name: str = None
+    env_kwargs: str = None
     agentCls_name: str = None
     seed: int = None
     gamma: float = None
@@ -206,6 +207,7 @@ def write_post_episode_log(cfg: DictConfig,
     log_dict = {
         'num_episodes': cfg.training.num_episodes,
         'envCls_name': cfg.env.cls_string,
+        'env_kwargs': str(cfg.env.kwargs),
         'agentCls_name': cfg.agent.cls_string,
         'seed': cfg.training.seed,  # global seed
         'lr': cfg.agent.lr,
