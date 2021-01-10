@@ -60,24 +60,42 @@ def solve_successor_feature(env: gym.Env, gamma: float) -> np.ndarray:
     return sf_mat
 
 
-def solve_linear_sf_param(env: gym.Env, discount_factor: float) -> np.ndarray:
+def solve_linear_sf_param(env: gym.Env, gamma: float) -> np.ndarray:
     """
-    Solve for the linear successor features given an environment
-    TODO NOTE this is deprecated. Not sure if correct.
+    Solve for the linear successor feature parameter matrix. Given an
+    environment, extract the transition and feature matrices. Solve the
+    best linear approximation to the perfect successor feature.
+
     :param env: gym environment
-    :param discount_factor: (gamma * lamb)
-    :return:
+    :param gamma: float discount factor
+    :return: np.array of (d, d) successor matrix
     """
-    phiMat = env.get_feature_matrix()
-    transMat = env.get_transition_matrix()
-    p_n_states = np.shape(transMat)[0]
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    transMat = env.get_transition_matrix()  # (N, N) trans mat
+    p_n_states = np.shape(transMat)[0]  # N
 
-    cMat = np.identity(p_n_states) - (discount_factor * transMat)
-    qMat = cMat @ phiMat
+    # Project and solve
+    cMat = np.identity(p_n_states) - (gamma * transMat)
+    proj_cMat = phiMat.T @ cMat @ phiMat
+    Z = np.linalg.inv(proj_cMat) @ (phiMat.T @ phiMat)
 
-    # Solve
-    Z = np.linalg.inv(qMat.T @ qMat) @ qMat.T @ transMat @ phiMat
     return Z
+
+
+def solve_linear_reward_param(env: gym.Env) -> np.ndarray:
+    """
+    Solve for the linear (one-step) reward parameter vector.
+    :param env:  gym environment
+    :return: (d, ) reward function parameters
+    """
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    rewVec = env.get_reward_function()  # (N, 1) reward vec
+
+    # Project and solve
+    solMat = np.linalg.inv((phiMat.T @ phiMat))
+    Wr = solMat @ phiMat.T @ rewVec
+
+    return Wr
 
 
 def evaluate_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
@@ -87,12 +105,14 @@ def evaluate_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
 
     :return: scalar RMSE
     """
-    n_states = env.get_num_states()
+
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    n_states = np.shape(phiMat)[0]
     esti_v_fn = np.empty(n_states)
 
     for s_n in range(n_states):
         # Get state features
-        s_phi = env.state_2_features(s_n)
+        s_phi = phiMat[s_n, :]
 
         # Compute the value estimate TODO change this
         # NOTE: assumes only a single action is available
@@ -110,10 +130,12 @@ def evaluate_sf_ret_rmse(env, agent, true_v_fn) -> float:
     if not hasattr(agent, 'compute_successor_return'):
         return None
 
-    n_states = env.get_num_states()
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    n_states = np.shape(phiMat)[0]
     esti_v_fn = np.empty(n_states)
+
     for s_n in range(n_states):
-        s_phi = env.state_2_features(s_n)  # state features
+        s_phi = phiMat[s_n, :]  # state features
         esti_v_fn[s_n] = agent.compute_successor_return(
             s_phi, 0
         )  # compute value
@@ -128,18 +150,12 @@ def evaluate_sf_mat_rmse(env, agent, true_sf_mat) -> float:
     :param true_sf_mat:  (N, d) true successor feature matrix
     :return:
     """
-    n_states = env.get_num_states()
-    d_features = env.observation_space.shape[0]
-    esti_sf_mat = np.empty((n_states, d_features))
+    # NOTE: assumes only single action, and assumes parameter name is Ws
+    #       potential TODO make more general
+    sf_param = agent.Ws[0]  # (d, d)
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
 
-    for s_n in range(n_states):
-        # Get state features
-        s_phi = env.state_2_features(s_n)
-
-        # Compute the estimate SF
-        # TODO: hacky, assumes only single action is available, should fix
-        sf_T = s_phi.T @ agent.Ws[0]  # (d, )
-        esti_sf_mat[s_n] = sf_T
+    esti_sf_mat = phiMat @ sf_param
 
     return compute_rmse(esti_sf_mat, true_sf_mat)
 
