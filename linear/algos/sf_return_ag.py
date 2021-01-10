@@ -55,8 +55,9 @@ class SFReturnAgent(BaseLinearAgent):
         ws_idxs = np.arange(self.feature_dim)
         self.Ws[:, ws_idxs, ws_idxs] = 1.0
 
-        # (Optional?) Give agent the optimal reward parameters
-        self.use_true_R_fn = use_true_reward_params  # TODO change attribute name to be identical to input arg
+        # (Optional) Give agent the solved sf and/or reward parameters
+        self.use_true_sf_params = use_true_sf_params
+        self.use_true_reward_params = use_true_reward_params
 
     def begin_episode(self, phi):
         super().begin_episode(phi)
@@ -84,11 +85,11 @@ class SFReturnAgent(BaseLinearAgent):
         # Learning
 
         # Reward learning
-        if (not self.use_true_R_fn) and (len(self.traj['r']) > 0):
+        if (not self.use_true_reward_params) and (len(self.traj['r']) > 0):
             self._optimize_reward_fn()
 
         # SF learning
-        if len(self.traj['r']) > 0:
+        if (not self.use_true_sf_params) and (len(self.traj['r']) > 0):
             self._optimize_successor_features(done)
 
         # Value learning
