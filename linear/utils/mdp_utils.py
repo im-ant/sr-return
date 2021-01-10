@@ -105,12 +105,14 @@ def evaluate_value_rmse(env: gym.Env, agent, true_v_fn) -> float:
 
     :return: scalar RMSE
     """
-    n_states = env.get_num_states()
+
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    n_states = np.shape(phiMat)[0]
     esti_v_fn = np.empty(n_states)
 
     for s_n in range(n_states):
         # Get state features
-        s_phi = env.state_2_features(s_n)
+        s_phi = phiMat[s_n, :]
 
         # Compute the value estimate TODO change this
         # NOTE: assumes only a single action is available
@@ -128,10 +130,12 @@ def evaluate_sf_ret_rmse(env, agent, true_v_fn) -> float:
     if not hasattr(agent, 'compute_successor_return'):
         return None
 
-    n_states = env.get_num_states()
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+    n_states = np.shape(phiMat)[0]
     esti_v_fn = np.empty(n_states)
+
     for s_n in range(n_states):
-        s_phi = env.state_2_features(s_n)  # state features
+        s_phi = phiMat[s_n, :]  # state features
         esti_v_fn[s_n] = agent.compute_successor_return(
             s_phi, 0
         )  # compute value
@@ -146,7 +150,8 @@ def evaluate_sf_mat_rmse(env, agent, true_sf_mat) -> float:
     :param true_sf_mat:  (N, d) true successor feature matrix
     :return:
     """
-    # NOTE: assumes only single action, potentially fix TODO
+    # NOTE: assumes only single action, and assumes parameter name is Ws
+    #       potential TODO make more general
     sf_param = agent.Ws[0]  # (d, d)
     phiMat = env.get_feature_matrix()  # (N, d) feature mat
 
