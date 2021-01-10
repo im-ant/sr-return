@@ -103,7 +103,21 @@ def _initialize_agent(cfg: DictConfig, environment) -> object:
     # ==
     # (Optional) Initialize true reward and SF functions
 
-    # TODO: optionally initiaze the true reward and SF functions
+    # Initialize solved SF parameters
+    if hasattr(cfg.agent.kwargs, 'use_true_sf_params'):
+        if cfg.agent.kwargs.use_true_sf_params:
+            linear_sf_param = mut.solve_linear_sf_param(
+                env=environment,
+                gamma=(cfg.agent.kwargs.gamma * cfg.agent.kwargs.lamb)
+            )
+            agent.Ws[0] = linear_sf_param
+    # Initialize solved reward parameters
+    if hasattr(cfg.agent.kwargs, 'use_true_reward_params'):
+        if cfg.agent.kwargs.use_true_reward_params:
+            linear_reward_param = mut.solve_linear_reward_param(
+                env=environment,
+            )
+            agent.Wr = linear_reward_param
 
     return agent
 
@@ -132,6 +146,7 @@ def _pre_compute(cfg: DictConfig, environment, agent) -> dict:
         'true_value_vec': true_v_fn,
         'true_sf_mat': true_sf_mat,
     }
+
     return out_dict
 
 
@@ -220,7 +235,6 @@ def write_post_episode_log(cfg: DictConfig,
     # ==
     # episode-specific logs
 
-    # TODO fix this how? (after dinner put the episode thing in a dict too
     log_dict['episode_idx'] = episode_dict['episode_idx']
     log_dict['total_steps'] = episode_dict['total_steps']
     log_dict['cumulative_reward'] = episode_dict['cumulative_reward']
