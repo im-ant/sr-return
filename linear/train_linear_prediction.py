@@ -7,6 +7,7 @@
 import argparse
 import configparser
 import dataclasses
+from itertools import product
 import logging
 import os
 
@@ -315,6 +316,61 @@ def run_single_linear_experiment(cfg: DictConfig,
                 break
 
 
+def run_experiments(cfg: DictConfig, logger=None):
+    """
+    Wrapper method, takes Cartesian product of lists inside of the
+    DictConfig before running individual experiments.
+    :param cfg:
+    :param logger:
+    :return:
+    """
+
+    def dict_2_dict_list(d: dict) -> dict:
+        """
+        Convert all of a dict's leaf values into lists
+        E.g. 1 -> [1]
+        """
+        # ==
+        # Base case: if it is a list
+        if isinstance(d, list):
+            return d
+        # Base case: if it is a primitive
+        if not isinstance(d, dict):
+            return [d]
+        # ==
+        # Recursion if it is a dict
+        new_d = {}
+        for k in d:
+            new_d[k] = dict_2_dict_list(d[k])
+        return new_d
+
+    def gen_combinations(d: dict):
+        """
+        Recursive Cartesian product of a nested dictionary of lists of
+        arbitrary length. Outputs a generator. From:
+        https://stackoverflow.com/questions/50606454/cartesian-product-of-nested-dictionaries-of-lists
+        :param d:
+        :return:
+        """
+        keys, values = d.keys(), d.values()
+        values_choices = (gen_combinations(v) if isinstance(v, dict) else v for v in values)
+        for comb in product(*values_choices):
+            yield dict(zip(keys, comb))
+
+    # ==
+    # Convert
+    cfg_dict = OmegaConf.to_container(cfg)
+    cfg_dict_list = dict_2_dict_list(cfg_dict)
+
+    # ==
+    # Iterate over product of possible param combinations
+    for c in gen_combinations(cfg_dict_list):
+        print(c)
+        cur_cfg = OmegaConf.create(c)
+        # run individual experiments
+        run_single_linear_experiment(cur_cfg, logger)
+
+
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))  # print the configs
@@ -333,7 +389,8 @@ def main(cfg: DictConfig) -> None:
 
     # =====================================================
     # Initialize experiment
-    run_single_linear_experiment(cfg=cfg, logger=logger)
+    # run_single_linear_experiment(cfg=cfg, logger=logger)  # for indv jobs
+    run_experiments(cfg=cfg, logger=logger)  # sweep over config lists
 
 
 if __name__ == "__main__":
