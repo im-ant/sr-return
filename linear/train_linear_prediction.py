@@ -91,7 +91,7 @@ def _initialize_agent(cfg: DictConfig, environment) -> object:
 
     # ==
     # Initialize with config parameters
-    agentCls = globals()[cfg.agent.cls_string]  # hacky class
+    agentCls = globals()[cfg.agent.cls_string]  # hacky class init
     agent_kwargs = OmegaConf.to_container(cfg.agent.kwargs)  # convert to dict
     agent_kwargs['seed'] = cfg.training.seed
 
