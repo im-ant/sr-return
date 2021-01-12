@@ -19,6 +19,7 @@ import numpy as np
 from algos.sf_return_ag import SFReturnAgent
 from algos.td_lambda_ag import SarsaLambdaAgent
 from algos.expt_trace_ag import ExpectedTraceAgent
+from envs.bipolar_chain import BipolarChainEnv
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 from envs.perf_bin_tree import PerfBinaryTreeEnv
