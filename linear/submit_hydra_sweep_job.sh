@@ -30,7 +30,7 @@ cpu_per_task="1"
 mem_per_job="12G"
 
 # Specify time need (same for all jobs)
-time_per_job="22:00:00"
+time_per_job="48:00:00"
 
 
 
