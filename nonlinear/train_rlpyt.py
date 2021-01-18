@@ -2,20 +2,21 @@
 # Training script with the rlpyt package
 # ============================================================================
 
-
 import sys
+import random
 
 import gym
-from gym_minigrid import wrappers
 import hydra
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import torch
 
+from gym_minigrid import wrappers
 from rlpyt.algos.pg.a2c import A2C
+from rlpyt.algos.pg.ppo import PPO
 from rlpyt.agents.pg.atari import (AtariMixin, AtariFfAgent)
-from rlpyt.agents.pg.categorical import CategoricalPgAgent
 from rlpyt.models.pg.atari_ff_model import AtariFfModel
+from rlpyt.agents.pg.categorical import CategoricalPgAgent
 from rlpyt.envs.gym import GymEnvWrapper
 from rlpyt.samplers.collections import TrajInfo
 from rlpyt.samplers.serial.sampler import SerialSampler
@@ -24,24 +25,27 @@ from rlpyt.samplers.parallel.cpu.collectors import (CpuResetCollector,
 from rlpyt.samplers.serial.collectors import SerialEvalCollector
 from rlpyt.runners.minibatch_rl import MinibatchRl
 from rlpyt.utils.logging.context import logger_context
+from rlpyt.utils import seed as rlpyt_seed
+
+from agents.categorical_lsf import CategoricalPgLsfAgent
+from algos.a2c_lsf import A2C_LSF
+from models.cat_lsf_ff_model import CategoricalPgLsfFfModel
 
 
-def minigrid_env_f(**kwargs):
-    minigrid_env = gym.make('MiniGrid-Empty-5x5-v0')
+def minigrid_env_f(name='MiniGrid-Empty-5x5-v0'):
+    minigrid_env = gym.make(name)
     minigrid_env = wrappers.ImgObsWrapper(minigrid_env)
 
     return GymEnvWrapper(minigrid_env)
 
 
-def build_and_train(cfg: DictConfig, cuda_idx=None):
+def build_and_train(cfg: DictConfig, cuda_idx=None, seed=None):
     # =====
     # Set up hardware
-    n_parallel=2
+    n_parallel = 2
     affinity = dict(cuda_idx=cuda_idx, workers_cpus=list(range(n_parallel)))
     gpu_cpu = "CPU" if cuda_idx is None else f"GPU {cuda_idx}"
     print(f"Using serial sampler, {gpu_cpu} for sampling and optimizing.")
-
-    game = 'MiniGrid-Empty-5x5-v0'
 
     # =====
     # Set up environment sampler
@@ -50,35 +54,27 @@ def build_and_train(cfg: DictConfig, cuda_idx=None):
         EnvCls=minigrid_env_f,
         TrajInfoCls=TrajInfo,  # collect default trajectory info
         CollectorCls=CpuResetCollector,  # [CpuWaitResetCollector, CpuResetCollector]
-        env_kwargs={},
-        batch_T=10,  # seq length of per batch of sampled data
-        batch_B=1,
-        max_decorrelation_steps=0,
+        env_kwargs=cfg.environment.kwargs,
         eval_CollectorCls=SerialEvalCollector,
         eval_env_kwargs={},  # eval stuff, don't think it is used
-        eval_n_envs=0,
-        eval_max_steps=int(10e3),
-        eval_max_trajectories=5,
+        **cfg.sampler.kwargs,
     )
-
-    #example_env = minigrid_env_f()  # TODO delete this is not used
-
-    # =====
-    # Set up RL algorithm
-    algo = A2C()  # Run with defaults.
 
     # =====
     # Set up model and agent  # NOTE: no need to initialize env sizes?
-    model_kwargs = {
-        'fc_sizes': 512,
-        'use_maxpool': False,
-        'channels': None,
-        'kernel_sizes': [2, 1],
-        'strides': [2, 1],
-        'paddings': None,
-    }
-    agent = AtariFfAgent(model_kwargs=model_kwargs)
+    model_cls = globals()[cfg.model.cls_string]
+    model_kwargs = cfg.model.kwargs
 
+    agent_cls = globals()[cfg.agent.cls_string]
+    agent = agent_cls(ModelCls=model_cls,
+                      model_kwargs=model_kwargs,
+                      initial_model_state_dict=None)
+
+    # =====
+    # Set up RL algorithm
+    algo_cls = globals()[cfg.algo.cls_string]
+    optim_cls = torch.optim.Adam  # maybe todo: make into config
+    algo = algo_cls(OptimCls=optim_cls, **cfg.algo.kwargs)
 
     # =====
     # Set up runner
@@ -86,24 +82,19 @@ def build_and_train(cfg: DictConfig, cuda_idx=None):
         algo=algo,
         agent=agent,
         sampler=sampler,
-        n_steps=50e6,
-        log_interval_steps=1e4,
         affinity=affinity,
+        seed=seed,
+        **cfg.runner.kwargs,
     )
 
-    #tmp_k = model_kwargs  # TODO delete, these are just used to see the model size
-    #tmp_k['image_shape'] = example_env.observation_space.shape
-    #tmp_k['output_size'] = example_env.action_space.n
-    #tmp = AtariFfModel(**tmp_k)
-    #print(tmp)
-    #a = 1/0
-
     # ==
-    config = dict(game=game)
-    run_ID = 0
-    name = "a2c_" + game
-    log_dir = "example_tmp"
-    with logger_context(log_dir, run_ID, name, config):
+    log_params = dict(cfg.environment.kwargs)  # TODO not sure why useful
+    run_ID = 0  # TODO remove? or change to seed
+    name = "a2c_" + cfg.environment.kwargs.name  # TODO change
+    with logger_context(run_ID=run_ID,
+                        name=name,
+                        log_params=log_params,
+                        **cfg.logger_context.kwargs):
         runner.train()
 
 
@@ -117,12 +108,19 @@ def main(cfg: DictConfig) -> None:
     print('cuda_idx:', cuda_idx)
 
     # =====================================================
-    # TODO set seeds
+    # Set seeds
+    seed = cfg.training.seed
+    if seed is None:
+        seed = rlpyt_seed.make_seed()
+    rlpyt_seed.set_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.random.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
     # =====================================================
     # Run experiments
-    build_and_train(cfg, cuda_idx=cuda_idx)
-    pass
+    build_and_train(cfg, cuda_idx=cuda_idx, seed=seed)
 
 
 

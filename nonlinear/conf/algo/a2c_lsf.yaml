@@ -1,0 +1,15 @@
+# @package _group_
+cls_string: 'A2C_LSF'
+kwargs:
+  discount: 0.95
+  sf_lambda: 0.8
+  learning_rate: 0.001
+  value_loss_coeff: 0.5
+  sf_loss_coeff: 0.5
+  reward_loss_coeff: 0.5
+  entropy_loss_coeff: 0.01
+  clip_grad_norm: 1.0
+  gae_lambda: 0.0  # dummy, only works for 0 for now
+  normalize_advantage: False  # dummy
+  optim_kwargs: {}
+  initial_optim_state_dict: null

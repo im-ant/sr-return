@@ -1,0 +1,9 @@
+# @package _group_
+cls_string: 'CategoricalPgLsfFfModel'
+kwargs:
+  fc_sizes: 512
+  use_maxpool: False
+  channels: [16]
+  kernel_sizes: [2]
+  strides: [1]
+  paddings: [0]
