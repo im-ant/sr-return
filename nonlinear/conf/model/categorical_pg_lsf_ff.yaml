@@ -8,3 +8,4 @@ kwargs:
   strides: [1]
   paddings: [0]
   sf_hidden_sizes: null
+  detach_sf_grad: False
