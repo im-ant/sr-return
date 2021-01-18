@@ -135,15 +135,8 @@ class A2C_LSF(PolicyGradientAlgo):
 
         reward_target = samples.env.reward
 
-        """
-        print('vret', v_return.size())  # TODO delete these
-        print('sf ret', sf_return.size())  # TODo delete these
-        print('adv', advantage.size())  # TODO DEELETE
-        print('valid', valid.size())  # TODO DELETE
-        print(valid.view(-1))
-        print(samples.env.done.view(-1))
-        """
-        # print(self.agent.model.parameters())  # TODO delete
+        # ==
+        # Compute losses
 
         # Policy loss
         dist = self.agent.distribution
@@ -171,10 +164,8 @@ class A2C_LSF(PolicyGradientAlgo):
 
         perplexity = dist.mean_perplexity(dist_info, valid)
 
-        # print(f'v:{value_loss}, sf:{sf_loss}, rew:{rew_loss}')  # TODO delete
-
         # ==
-        # Construct loss logs
+        # Construct logs
         log_dict = {
             'value_loss': value_loss.item(),
             'sf_loss': sf_loss.item(),
