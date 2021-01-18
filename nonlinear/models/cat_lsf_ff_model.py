@@ -31,6 +31,7 @@ class CategoricalPgLsfFfModel(torch.nn.Module):
             kernel_sizes=None,
             strides=None,
             paddings=None,
+            sf_hidden_sizes=None,
     ):
         """Instantiate neural net module according to inputs."""
         super().__init__()
@@ -46,17 +47,29 @@ class CategoricalPgLsfFfModel(torch.nn.Module):
         self.pi = torch.nn.Linear(self.conv.output_size, output_size)
         self.value_layer = torch.nn.Linear(self.conv.output_size, 1)  # TODO note sure if bias should be here or not
 
-        self.sf_fn = nn.Sequential(
-            nn.Linear(self.conv.output_size, self.conv.output_size),
-            nn.ReLU(),
-            nn.Linear(self.conv.output_size, self.conv.output_size),
-            nn.ReLU(),
-            nn.Linear(self.conv.output_size, self.conv.output_size),
-        )
+        # Initialize the SF function layer(s)
+        if sf_hidden_sizes is None or len(sf_hidden_sizes) == 0:
+            self.sf_fn = nn.Linear(self.conv.output_size, self.conv.output_size)
+        else:
+            sf_fn_layers_list = [
+                nn.Linear(self.conv.output_size, sf_hidden_sizes[0]),
+                nn.ReLU()
+            ]
+            for i in range(1, len(sf_hidden_sizes)):
+                sf_fn_layers_list.extend([
+                    nn.Linear(sf_hidden_sizes[i-1], sf_hidden_sizes[i]),
+                    nn.ReLU(),
+                ])
+            sf_fn_layers_list.extend([
+                nn.Linear(sf_hidden_sizes[-1], self.conv.output_size),
+            ])
+            self.sf_fn = nn.Sequential(*sf_fn_layers_list)
         #self.sf_layer = torch.nn.Linear(self.conv.output_size, self.conv.output_size, bias=False)
         #self.sf_layer.weight.data.copy_(torch.eye(self.conv.output_size))  # identity init
 
         self.reward_layer = torch.nn.Linear(self.conv.output_size, 1)
+
+        print(self)  # NOTE: for model summary, not sure if delete (todo?)
 
     def process_image(self, image):
         img = image.type(torch.float)  # Expect torch.uint8 inputs

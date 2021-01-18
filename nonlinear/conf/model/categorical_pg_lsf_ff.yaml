@@ -7,3 +7,4 @@ kwargs:
   kernel_sizes: [2]
   strides: [1]
   paddings: [0]
+  sf_hidden_sizes: null
