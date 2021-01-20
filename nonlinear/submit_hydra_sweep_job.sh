@@ -16,7 +16,7 @@ stdout_dir="/network/tmp1/chenant/ant/sr_trace/stdout_error"
 job_file="/home/mila/c/chenant/repos/sr-return/nonlinear/arg-job_train_hydra.script"
 
 # Job partition (same for all jobs)
-partition_per_job="main,long"
+partition_per_job="main"  # "main,long"
 
 # Job resource (same for all jobs)
 # pascal: [titanx, titanxp]; turing: [titanrtx, rtx8000];

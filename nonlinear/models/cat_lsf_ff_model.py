@@ -32,6 +32,7 @@ class CategoricalPgLsfFfModel(torch.nn.Module):
             strides=None,
             paddings=None,
             sf_hidden_sizes=None,
+            detach_sf_grad=False,
     ):
         """Instantiate neural net module according to inputs."""
         super().__init__()
@@ -47,9 +48,13 @@ class CategoricalPgLsfFfModel(torch.nn.Module):
         self.pi = torch.nn.Linear(self.conv.output_size, output_size)
         self.value_layer = torch.nn.Linear(self.conv.output_size, 1)  # TODO note sure if bias should be here or not
 
+        # Initialize reward function layer
+        self.reward_layer = torch.nn.Linear(self.conv.output_size, 1)
+
         # Initialize the SF function layer(s)
         if sf_hidden_sizes is None or len(sf_hidden_sizes) == 0:
             self.sf_fn = nn.Linear(self.conv.output_size, self.conv.output_size)
+            self.sf_fn.weight.data.copy_(torch.eye(self.conv.output_size))
         else:
             sf_fn_layers_list = [
                 nn.Linear(self.conv.output_size, sf_hidden_sizes[0]),
@@ -64,10 +69,9 @@ class CategoricalPgLsfFfModel(torch.nn.Module):
                 nn.Linear(sf_hidden_sizes[-1], self.conv.output_size),
             ])
             self.sf_fn = nn.Sequential(*sf_fn_layers_list)
-        #self.sf_layer = torch.nn.Linear(self.conv.output_size, self.conv.output_size, bias=False)
-        #self.sf_layer.weight.data.copy_(torch.eye(self.conv.output_size))  # identity init
 
-        self.reward_layer = torch.nn.Linear(self.conv.output_size, 1)
+        # Other attributes
+        self.detach_sf_grad = detach_sf_grad
 
         print(self)  # NOTE: for model summary, not sure if delete (todo?)
 
@@ -107,10 +111,18 @@ class CategoricalPgLsfFfModel(torch.nn.Module):
         # Infer (presence of) leading dimensions: [T,B], [B], or [].
         lead_dim, T, B, img_shape = infer_leading_dims(img, 3)
 
+        # ==
+        # Generate network outputs
         fc_out = self.conv(img.view(T * B, *img_shape))
+
         pi = F.softmax(self.pi(fc_out), dim=-1)  # policy dist
         v = self.value_layer(fc_out).squeeze(-1)  # value estimate
-        sf = self.sf_fn(fc_out)  # sf NOTE no need to squeeze (I think)  TODO detach or no?
+
+        if self.detach_sf_grad:
+            sf = self.sf_fn(fc_out.detach().clone())
+        else:
+            sf = self.sf_fn(fc_out)
+
         r = self.reward_layer(fc_out).squeeze(-1)  # reward
 
         # ==

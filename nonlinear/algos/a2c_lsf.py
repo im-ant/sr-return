@@ -32,6 +32,8 @@ class A2C_LSF(PolicyGradientAlgo):
     Advantage Actor Critic algorithm (synchronous).  Trains the agent by
     taking one gradient step on each iteration of samples, with advantages
     computed by generalized advantage estimation.
+
+    Works with rlpyt and temporal batches + minibatches.
     """
 
     # Overriding parent log fields
@@ -65,15 +67,6 @@ class A2C_LSF(PolicyGradientAlgo):
     def optimize_agent(self, itr, samples):
         """
         Train the agent on input samples, by one gradient step.
-        """
-
-        """ TODO DELETE TEST PRINTS
-        for n, p in self.agent.model.named_parameters():  # TODO delete
-            print(n, p.data.size())
-        for g in self.optimizer.param_groups:
-            for p in g['params']:
-                print(print(p.data.size()))
-        a = 1/0
         """
 
         if hasattr(self.agent, "update_obs_rms"):
@@ -135,15 +128,8 @@ class A2C_LSF(PolicyGradientAlgo):
 
         reward_target = samples.env.reward
 
-        """
-        print('vret', v_return.size())  # TODO delete these
-        print('sf ret', sf_return.size())  # TODo delete these
-        print('adv', advantage.size())  # TODO DEELETE
-        print('valid', valid.size())  # TODO DELETE
-        print(valid.view(-1))
-        print(samples.env.done.view(-1))
-        """
-        # print(self.agent.model.parameters())  # TODO delete
+        # ==
+        # Compute losses
 
         # Policy loss
         dist = self.agent.distribution
@@ -171,10 +157,8 @@ class A2C_LSF(PolicyGradientAlgo):
 
         perplexity = dist.mean_perplexity(dist_info, valid)
 
-        # print(f'v:{value_loss}, sf:{sf_loss}, rew:{rew_loss}')  # TODO delete
-
         # ==
-        # Construct loss logs
+        # Construct logs
         log_dict = {
             'value_loss': value_loss.item(),
             'sf_loss': sf_loss.item(),
