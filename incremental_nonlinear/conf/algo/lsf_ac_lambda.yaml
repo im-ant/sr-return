@@ -1,0 +1,11 @@
+# @package _group_
+cls_string: 'LSF_ACLambda'
+kwargs:
+  discount_gamma: 0.99
+  lr_alpha: 0.00048828125
+  trace_lambda: 0.8
+  entropy_beta: 0.01
+  grad_rms_gamma: 0.999
+  grad_rms_eps: 0.0001
+  min_denom: 0.0001
+  sf_lambda: 0.0

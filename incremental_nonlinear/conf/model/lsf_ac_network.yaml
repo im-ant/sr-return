@@ -1,0 +1,5 @@
+# @package _group_
+cls_string: 'LSF_ACNetwork'
+kwargs:
+  fc_sizes: 128
+  sf_hidden_sizes: null  #[128, 128]
