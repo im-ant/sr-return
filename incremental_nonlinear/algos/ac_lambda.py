@@ -19,28 +19,36 @@ class ACLambda:
     Incremental AC lambda agent
     """
 
-    def __init__(self, ModelCls, model_kwargs):
+    def __init__(self, ModelCls, model_kwargs,
+                 discount_gamma=0.99,
+                 lr_alpha=0.00048828125,
+                 trace_lambda=0.8,
+                 entropy_beta=0.01,
+                 grad_rms_gamma=0.999,
+                 grad_rms_eps=0.0001,
+                 min_denom=0.0001
+                 ):
         # TODO: input everything as argument
 
         self.ModelCls = ModelCls
         self.model_kwargs = model_kwargs
 
+        self.discount_gamma = discount_gamma
+        self.lr_alpha = lr_alpha
+        self.trace_lambda = trace_lambda
+        self.entropy_beta = entropy_beta
+        self.grad_rms_gamma = grad_rms_gamma
+        self.grad_rms_eps = grad_rms_eps
+        self.min_denom = min_denom
+
         # Network for AC evaluation
         self.model = None
         # Eligibility self.traces are stored here
-        self.traces = None
+        self.traces = []
         # Space allocated to store gradients used in training
-        self.grads = None
+        self.grads = []
         # Running average of mean squared gradient for use in RMSProp
-        self.msgrads = None
-
-        self.lr_alpha = 0.00048828125
-        self.trace_lambda = 0.8
-        self.discount_gamma = 0.99
-        self.grad_beta = 0.01
-        self.grad_rms_gamma = 0.999
-        self.grad_rms_eps = 0.0001
-        self.min_denom = 0.0001
+        self.msgrads = []
 
     def initialize(self, env, device):
         """Initialize agent"""
@@ -50,24 +58,30 @@ class ACLambda:
         self.model = self.ModelCls(
             in_channels,
             num_actions,
-            **self.model_kwargs
+            **self.model_kwargs,
         ).to(device)
 
-        self.traces = [
-            torch.zeros(x.size(),
-                        dtype=torch.float32,
-                        device=device) for x in self.model.parameters()
+        # List of parameter names to add eligibility traces to
+        trace_param_list = [
+            'conv.weight', 'conv.bias', 'fc_hidden.weight', 'fc_hidden.bias',
+            'policy.weight', 'policy.bias',
+            'value.weight', 'value.bias',  # 'sf_fn.weight', 'sf_fn_bias',
         ]
-        self.grads = [
-            torch.zeros(x.size(),
-                        dtype=torch.float32,
-                        device=device) for x in self.model.parameters()
-        ]
-        self.msgrads = [
-            torch.zeros(x.size(),
-                        dtype=torch.float32,
-                        device=device) for x in self.model.parameters()
-        ]
+
+        for name, params in self.model.named_parameters():
+            if name not in trace_param_list:
+                continue
+            self.traces.append(torch.zeros(
+                params.size(), dtype=torch.float32, device=device)
+            )
+            self.grads.append(torch.zeros(
+                params.size(), dtype=torch.float32, device=device)
+            )
+            self.msgrads.append(torch.zeros(
+                params.size(), dtype=torch.float32, device=device)
+            )
+
+        print(self.model)  # TODO delete?
 
     def optimize_agent(self, sample, time_step):
 
@@ -107,7 +121,7 @@ class ACLambda:
                 for param, trace, ms_grad in zip(self.model.parameters(),
                                                  self.traces,
                                                  self.msgrads):
-                    grad = trace * delta[0] + self.grad_beta * param.grad
+                    grad = trace * delta[0] + self.entropy_beta * param.grad
                     ms_grad.copy_(self.grad_rms_gamma * ms_grad + (1 - self.grad_rms_gamma) * grad * grad)
                     # Param updates
                     param.copy_(
@@ -120,6 +134,17 @@ class ACLambda:
         with torch.no_grad():
             for grad, trace in zip(self.grads, self.traces):
                 trace.copy_(self.trace_lambda * self.discount_gamma * trace + grad)
+
+        # ==
+        # Construct dict
+        out_dict = None
+        # TODO log the average trace magnitude?
+        if last_state is not None:
+            out_dict = {
+                'value_loss': delta.item() ** 2,
+            }
+
+        return out_dict
 
     def clear_eligibility_traces(self):
         """

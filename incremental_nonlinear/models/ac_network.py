@@ -36,8 +36,7 @@ class ACNetwork(nn.Module):
     action for the policy network, and another output which is a fully
     connected linear layer, with a single output for the state value.
     """
-    def __init__(self,
-                 in_channels, num_actions,
+    def __init__(self, in_channels, num_actions,
                  fc_sizes=128):
         # TODO use image_shape,
         #             output_size??

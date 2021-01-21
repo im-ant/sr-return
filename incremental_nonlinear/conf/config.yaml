@@ -1,0 +1,20 @@
+defaults:
+  - algo: ac_lambda
+  - model: ac_network
+training:
+  seed: 1
+runner:
+  n_steps: 1e6
+  kwargs:
+    log_interval_episodes: 10
+    log_dir_path: './'
+env:
+  kwargs:
+    env_name: 'breakout'
+algo:
+  cls_string: 'ACLambda'  # LSF_ACLambda
+  kwargs:
+    discount_gamma: 0.99
+model:
+  cls_string: 'ACNetwork'  # LSF_ACNetwork
+  kwargs: {}
