@@ -44,11 +44,18 @@ class ACLambda:
         # Network for AC evaluation
         self.model = None
         # Eligibility self.traces are stored here
-        self.traces = []
+        self.traces = None
         # Space allocated to store gradients used in training
-        self.grads = []
+        self.grads = None
         # Running average of mean squared gradient for use in RMSProp
-        self.msgrads = []
+        self.msgrads = None
+
+        # List of allowable parameters to include for eligibility traces
+        self.trace_param_list = [
+            'conv.weight', 'conv.bias', 'fc_hidden.weight', 'fc_hidden.bias',
+            'policy.weight', 'policy.bias',
+            'value.weight', 'value.bias',
+        ]
 
     def initialize(self, env, device):
         """Initialize agent"""
@@ -61,24 +68,22 @@ class ACLambda:
             **self.model_kwargs,
         ).to(device)
 
-        # List of parameter names to add eligibility traces to
-        trace_param_list = [
-            'conv.weight', 'conv.bias', 'fc_hidden.weight', 'fc_hidden.bias',
-            'policy.weight', 'policy.bias',
-            'value.weight', 'value.bias',  # 'sf_fn.weight', 'sf_fn_bias',
-        ]
+        self.traces = {}
+        self.grads = {}
+        self.msgrads = {}
 
-        for name, params in self.model.named_parameters():
-            if name not in trace_param_list:
-                continue
-            self.traces.append(torch.zeros(
-                params.size(), dtype=torch.float32, device=device)
-            )
-            self.grads.append(torch.zeros(
-                params.size(), dtype=torch.float32, device=device)
-            )
-            self.msgrads.append(torch.zeros(
-                params.size(), dtype=torch.float32, device=device)
+        for name, param in self.model.named_parameters():
+            if name in self.trace_param_list:
+                self.traces[name] = torch.zeros(
+                    param.size(), dtype=torch.float32, device=device
+                )
+
+                self.grads[name] = torch.zeros(
+                    param.size(), dtype=torch.float32, device=device
+                )
+
+            self.msgrads[name] = torch.zeros(
+                param.size(), dtype=torch.float32, device=device
             )
 
         print(self.model)  # TODO delete?
@@ -95,45 +100,32 @@ class ACLambda:
 
         pi, V_curr = self.model(state)
 
-        # Compute the targets
-        # NOTE: i think this is basically like a sum of the losses used to compute the
-        #       gradients
+        # Compute targets
         trace_potential = V_curr + 0.5 * torch.log(pi[0, action] + self.min_denom)
         entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
 
-        # Save the value + policy loss gradient
+        # Gradients to be combined with elig traces
         self.model.zero_grad()
         trace_potential.backward(retain_graph=True)
-        with torch.no_grad():
-            for param, grad in zip(self.model.parameters(), self.grads):
-                grad.data.copy_(param.grad)
+        self.store_current_trace_grads()
 
         # Update parameters except for on the first observation
         if last_state is not None:
+            non_trace_loss = - self.entropy_beta * entropy
             self.model.zero_grad()
-            entropy.backward()
+            non_trace_loss.backward()
+
             with torch.no_grad():
                 # TD error
                 V_last = self.model(last_state)[1]
-                delta = self.discount_gamma * (0 if is_terminal else V_curr) + reward - V_last
+                delta = (self.discount_gamma * (0 if is_terminal else V_curr)
+                         + reward - V_last)
 
-                # Update uses RMSProp with initialization debiasing
-                for param, trace, ms_grad in zip(self.model.parameters(),
-                                                 self.traces,
-                                                 self.msgrads):
-                    grad = trace * delta[0] + self.entropy_beta * param.grad
-                    ms_grad.copy_(self.grad_rms_gamma * ms_grad + (1 - self.grad_rms_gamma) * grad * grad)
-                    # Param updates
-                    param.copy_(
-                        param + self.lr_alpha * grad / (torch.sqrt(
-                            ms_grad / (1 - self.grad_rms_gamma ** (time_step + 1)) + self.grad_rms_eps
-                        ))
-                    )
+                # Update
+                self.parameter_step(delta, time_step)
 
         # Accumulating trace (Always update trace)
-        with torch.no_grad():
-            for grad, trace in zip(self.grads, self.traces):
-                trace.copy_(self.trace_lambda * self.discount_gamma * trace + grad)
+        self.accumulate_eligibility_traces()
 
         # ==
         # Construct dict
@@ -146,13 +138,74 @@ class ACLambda:
 
         return out_dict
 
-    def clear_eligibility_traces(self):
+    def parameter_step(self, trace_delta, time_step) -> None:
+        """
+        One step of parameter update with eligibility traces and RMSProp
+        with initialization debiasing
+        :param trace_delta: torch.tensor of the delta (error) to be
+                            combined with the elig trace
+        :param time_step: number of optim steps for initialization debiasing
+        :return:
+        """
+
+        # Iterate over all model parameters
+        for name, param in self.model.named_parameters():
+            # Compute the trace for the current set of parameters
+            trace = 0.0
+            if name in self.traces:
+                trace = self.traces[name]
+
+            # Compute the parameter delta
+            grad = (trace * trace_delta[0]) + (-param.grad)
+
+            # Update the mean squared grad (for RMSProp)
+            self.msgrads[name].data.copy_(
+                self.grad_rms_gamma * self.msgrads[name]
+                + ((1 - self.grad_rms_gamma) * grad * grad)
+            )
+
+            # Update RMSprop adaptive denominator
+            delta_denom = torch.sqrt(
+                self.msgrads[name] /
+                (1 - self.grad_rms_gamma ** (time_step + 1))
+                + self.grad_rms_eps
+            )
+
+            # Update model parameters
+            self.model.state_dict()[name].copy_(
+                param + self.lr_alpha * (grad / delta_denom)
+            )
+
+    def store_current_trace_grads(self) -> None:
+        """
+        Helper method, saves the current gradients on the parameters
+        of self.model that require eligibility traces to self.grads
+        :return: None
+        """
+        with torch.no_grad():
+            for name, param in self.model.named_parameters():
+                if name in self.grads:
+                    self.grads[name].data.copy_(param.grad)
+
+    def accumulate_eligibility_traces(self) -> None:
+        """
+        Accumulate the gradients in self.grads in self.traces
+        :return:
+        """
+        with torch.no_grad():
+            for name in self.traces:
+                self.traces[name].data.copy_(
+                    self.trace_lambda * self.discount_gamma * self.traces[name]
+                    + self.grads[name]
+                )
+
+    def clear_eligibility_traces(self) -> None:
         """
         Called to clear the elig traces at the end of an episode
         :return: None
         """
-        for trace in self.traces:
-            trace.zero_()
+        for name in self.traces:
+            self.traces[name].zero_()
 
 
 if __name__ == '__main__':
