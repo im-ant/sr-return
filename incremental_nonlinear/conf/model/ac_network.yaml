@@ -1,0 +1,4 @@
+# @package _group_
+cls_string: 'ACNetwork'
+kwargs:
+  fc_sizes: 128
