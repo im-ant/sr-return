@@ -169,7 +169,7 @@ class ACLambda:
                 self.msgrads[name] /
                 (1 - self.grad_rms_gamma ** (time_step + 1))
                 + self.grad_rms_eps
-            ) 
+            )
 
             # Update model parameters
             self.model.state_dict()[name].copy_(
