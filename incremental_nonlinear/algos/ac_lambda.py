@@ -1,4 +1,4 @@
-##############################################################################
+# ============================================================================
 # Original Authors:
 # Kenny Young (kjyoung@ualberta.ca)
 # Tian Tian (ttian@ualberta.ca)
@@ -7,28 +7,12 @@
 #   https://pytorch.org/docs/stable/nn.html#
 #   https://pytorch.org/docs/stable/torch.html
 #   https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-##############################################################################
-
-
+# ============================================================================
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
 
-
-#####################################################################################################################
-# train
-#
-# This is where learning happens. More specifically, this function updates the weights of the policy/value self.model.
-#
-# Inputs:
-#   sample: a single transition
-#   self.traces: an instance of Qself.model
-#   grads: a list of tensors, one for each self.model parameter. Used as temporary storage of computed gradient
-#   self.model: an instance of ACself.model, to be trained
-#   alpha: learning rate for actor-critic update
-#
-#####################################################################################################################
 
 class ACLambda:
     """
@@ -41,6 +25,7 @@ class ACLambda:
         self.ModelCls = ModelCls
         self.model_kwargs = model_kwargs
 
+        # Network for AC evaluation
         self.model = None
         # Eligibility self.traces are stored here
         self.traces = None
@@ -84,16 +69,7 @@ class ACLambda:
                         device=device) for x in self.model.parameters()
         ]
 
-    def optimize_agent(self, sample, time_step):  # TODO change to optimize agent
-
-        """
-        LAMBDA = 0.8
-        GAMMA = 0.99
-        BETA = 0.01
-        self.grad_rms_gamma = 0.999
-        EPS_RMS = 0.0001
-        MIN_DENOM = 0.0001
-        """
+    def optimize_agent(self, sample, time_step):
 
         # states, next_states: (1, in_channel, 10, 10) - inline with pytorch NCHW format
         # actions, rewards, is_terminal: (1, 1)
@@ -106,12 +82,14 @@ class ACLambda:
         pi, V_curr = self.model(state)
 
         # Compute the targets
+        # NOTE: i think this is basically like a sum of the losses used to compute the
+        #       gradients
         trace_potential = V_curr + 0.5 * torch.log(pi[0, action] + self.min_denom)
         entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
 
+        # Save the value + policy loss gradient
         self.model.zero_grad()
         trace_potential.backward(retain_graph=True)
-
         with torch.no_grad():
             for param, grad in zip(self.model.parameters(), self.grads):
                 grad.data.copy_(param.grad)
@@ -121,6 +99,7 @@ class ACLambda:
             self.model.zero_grad()
             entropy.backward()
             with torch.no_grad():
+                # TD error
                 V_last = self.model(last_state)[1]
                 delta = self.discount_gamma * (0 if is_terminal else V_curr) + reward - V_last
 
@@ -130,10 +109,14 @@ class ACLambda:
                                                  self.msgrads):
                     grad = trace * delta[0] + self.grad_beta * param.grad
                     ms_grad.copy_(self.grad_rms_gamma * ms_grad + (1 - self.grad_rms_gamma) * grad * grad)
-                    param.copy_(param + self.lr_alpha * grad / (
-                        torch.sqrt(ms_grad / (1 - self.grad_rms_gamma ** (time_step + 1)) + self.grad_rms_eps)))
+                    # Param updates
+                    param.copy_(
+                        param + self.lr_alpha * grad / (torch.sqrt(
+                            ms_grad / (1 - self.grad_rms_gamma ** (time_step + 1)) + self.grad_rms_eps
+                        ))
+                    )
 
-        # Always update trace
+        # Accumulating trace (Always update trace)
         with torch.no_grad():
             for grad, trace in zip(self.grads, self.traces):
                 trace.copy_(self.trace_lambda * self.discount_gamma * trace + grad)

@@ -37,10 +37,14 @@ class ACNetwork(nn.Module):
     connected linear layer, with a single output for the state value.
     """
     def __init__(self,
-                 in_channels, num_actions):
+                 in_channels, num_actions,
+                 fc_sizes=128):
         # TODO use image_shape,
         #             output_size??
         super(ACNetwork, self).__init__()
+
+        self.fc_sizes = fc_sizes
+
         # One hidden 2D convolution layer:
         #   in_channels: variable
         #   out_channels: 16
@@ -56,11 +60,14 @@ class ACNetwork(nn.Module):
             return (size - (kernel_size - 1) - 1) // stride + 1
 
         num_linear_units = size_linear_unit(10) * size_linear_unit(10) * 16
-        self.fc_hidden = nn.Linear(in_features=num_linear_units, out_features=128)
+        self.fc_hidden = nn.Linear(in_features=num_linear_units,
+                                   out_features=self.fc_sizes)
 
         # Output layer:
-        self.policy = nn.Linear(in_features=128, out_features=num_actions)
-        self.value = nn.Linear(in_features=128, out_features=1)
+        self.policy = nn.Linear(in_features=self.fc_sizes,
+                                out_features=num_actions)
+        self.value = nn.Linear(in_features=self.fc_sizes,
+                               out_features=1)
 
     # As per implementation instructions, the forward function should be overwritten by all subclasses
     def forward(self, x):
