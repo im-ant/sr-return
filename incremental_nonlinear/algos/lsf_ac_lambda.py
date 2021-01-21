@@ -1,12 +1,9 @@
 # ============================================================================
-# Original Authors:
+# Adopted from original Authors:
 # Kenny Young (kjyoung@ualberta.ca)
 # Tian Tian (ttian@ualberta.ca)
 #
-# References used for this implementation:
-#   https://pytorch.org/docs/stable/nn.html#
-#   https://pytorch.org/docs/stable/torch.html
-#   https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+# Anthony G. Chen
 # ============================================================================
 import numpy as np
 import torch
@@ -55,26 +52,18 @@ class LSF_ACLambda(ACLambda):
         pi, V_curr, sf_curr, r_curr, lsf_V_curr, phi_curr = model_out_tup
 
         # Compute the targets
-        # NOTE: i think this is basically like a sum of the losses used to compute the
-        #       gradients
-        trace_potential = (
-                V_curr  # value grad
-                + (0.5 * torch.log(pi[0, action] + self.min_denom))  # pol grad
-        )
+        trace_potential = V_curr + 0.5 * torch.log(pi[0, action] + self.min_denom)
+        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
 
-        # Save the value + policy loss + sf gradient (for traces)
+        # Gradients to be combined with elig traces
         self.model.zero_grad()
         trace_potential.backward(retain_graph=True)
-        with torch.no_grad():
-            for param, grad in zip(self.model.parameters(), self.grads):
-                # TODO check and confirm this is working
-                grad.data.copy_(param.grad)
-
-        #
-        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
+        self.store_current_trace_grads()
 
         # Update parameters except for on the first observation
         if last_state is not None:
+            # ==
+            # More losses
 
             # SF loss
             phi_last = self.model.compute_phi(last_state)
@@ -88,47 +77,25 @@ class LSF_ACLambda(ACLambda):
             rew_last = self.model.reward_layer(phi_last)[0]
             rew_loss = 0.5 * (reward - rew_last) ** 2
 
-            # Inverse non-trace losses to optimize
-            non_trace_inv_loss = - (
+            # Combine non-trace losses to optimize
+            non_trace_loss = (
                     (0.5 * sf_loss) + (0.5 * rew_loss)
                     - (self.entropy_beta * entropy)
             )  # TODO add customizable coefficients
             self.model.zero_grad()
-            non_trace_inv_loss.backward()
+            non_trace_loss.backward()
 
             with torch.no_grad():
-                # ==
-                # Errors
-
-                # Value TD error
+                # TD error
                 V_last = self.model(last_state)[1]
-                v_target = (self.discount_gamma *
-                            (0 if is_terminal else lsf_V_curr) + reward)
-                v_delta = v_target - V_last
+                delta = (self.discount_gamma * (0 if is_terminal else V_curr)
+                         + reward - V_last)
 
-                # ==
-                # Update uses RMSProp with initialization debiasing
-                for param, trace, ms_grad in zip(self.model.parameters(),
-                                                 self.traces,
-                                                 self.msgrads):
-                    # elig trace deltas + other deltas
-                    grad = trace * v_delta[0] + param.grad
-
-                    # TODO NOTE: do a multiplication of trace * param.grad instead??
-
-                    # RMSProp and update
-                    ms_grad.copy_(self.grad_rms_gamma * ms_grad + (1 - self.grad_rms_gamma) * grad * grad)
-                    # Param updates
-                    param.copy_(
-                        param + self.lr_alpha * grad / (torch.sqrt(
-                            ms_grad / (1 - self.grad_rms_gamma ** (time_step + 1)) + self.grad_rms_eps
-                        ))
-                    )
+                # Update
+                self.parameter_step(delta, time_step)
 
         # Accumulating trace (Always update trace)
-        with torch.no_grad():
-            for grad, trace in zip(self.grads, self.traces):
-                trace.copy_(self.trace_lambda * self.discount_gamma * trace + grad)
+        self.accumulate_eligibility_traces()
 
         # ==
         # Construct dict
@@ -136,20 +103,12 @@ class LSF_ACLambda(ACLambda):
         # TODO log the average trace magnitude
         if last_state is not None:
             out_dict = {
-                'value_loss': v_delta.item() ** 2,
+                'value_loss': delta.item() ** 2,
                 'sf_loss': sf_loss.item(),
                 'reward_loss': rew_loss.item(),
             }
 
         return out_dict
-
-    def clear_eligibility_traces(self):
-        """
-        Called to clear the elig traces at the end of an episode
-        :return: None
-        """
-        for trace in self.traces:
-            trace.zero_()
 
 
 if __name__ == '__main__':
