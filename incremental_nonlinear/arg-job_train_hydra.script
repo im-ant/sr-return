@@ -25,13 +25,13 @@ source $HOME/venvs/rlpyt/bin/activate
 python -u train_incremental.py --multirun \
     hydra.run.dir=$sweep_parent_dir \
     hydra.sweep.dir=$sweep_parent_dir \
-    runner.n_steps=1e5 \
+    runner.n_steps=10e4 \
     runner.kwargs.log_interval_episodes=100 \
     env.kwargs.env_name='breakout' \
     algo=lsf_ac_lambda \
     algo.kwargs.lr_alpha=0.00048828125 \
-    algo.kwargs.trace_lambda=0.0,0.5,0.95 \
-    algo.kwargs.sf_lambda=0.0,0.5,0.95 \
+    algo.kwargs.trace_lambda=0.0 \
+    algo.kwargs.sf_lambda=0.0,0.3,0.6,0.9,1.0 \
     model=lsf_ac_network \
     model.kwargs.fc_sizes=128 \
     model.kwargs.sf_hidden_sizes=[256],[256,256] \
