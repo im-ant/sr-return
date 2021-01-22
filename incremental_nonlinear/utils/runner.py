@@ -25,6 +25,7 @@ class LogTupStruct:
     value_loss: float = None
     reward_loss: float = None
     sf_loss: float = None
+    lsf_v_v_diff: float = None
     et_loss: float = None
 
 
