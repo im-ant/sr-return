@@ -8,6 +8,10 @@ runner:
   kwargs:
     log_interval_episodes: 10
     log_dir_path: './'
+    store_checkpoint: True
+    checkpoint_type: 'interval'
+    checkpoint_freq: 100  # 2000 default?
+    checkpoint_dir_path: './checkpoints/'
 env:
   kwargs:
     env_name: 'breakout'
