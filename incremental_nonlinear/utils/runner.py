@@ -80,6 +80,7 @@ class IncrementalOnlineRunner(object):
                  checkpoint_type='interval',
                  checkpoint_freq=2000,
                  checkpoint_dir_path='./checkpoints/',
+                 load_model_path=None,
                  device='cpu'):
 
         self.algo = algo
@@ -97,12 +98,22 @@ class IncrementalOnlineRunner(object):
         self.checkpoint_freq = checkpoint_freq
         self.checkpoint_dir_path = checkpoint_dir_path
 
+        self.load_model_path = load_model_path  # load from checkpoint
+
+        # ==
+        # Initialize
         print('Initializing environment...')
         self.environment = self.EnvCls(**self.env_kwargs)
         print(self.environment)
 
         print('Initializing algo...')
         self.algo.initialize(self.environment, self.device)
+        # Possibly load from checkpoint
+        if self.load_model_path is not None:
+            print(f'Loading model from: {self.load_model_path}')
+            ckpt_model = torch.load(self.load_model_path)
+            self.algo.model.load_state_dict(ckpt_model)
+            self.algo.model = self.algo.model.to(self.device)
         print(self.algo)
 
         # ==
@@ -174,9 +185,6 @@ class IncrementalOnlineRunner(object):
 
         env = self.environment
         network = self.algo.model  # pass reference
-
-        # ==
-        # Possibly load from checkpoint
 
         # ==
         # Run training
