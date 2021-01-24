@@ -2,7 +2,7 @@
 cls_string: 'ACLambda'
 kwargs:
   discount_gamma: 0.99
-  lr_alpha: 0.00048828125
+  lr_alpha: 0.00048828125  #2^(-11), best alpha across games in paper
   trace_lambda: 0.8
   entropy_beta: 0.01
   grad_rms_gamma: 0.999
