@@ -19,7 +19,10 @@ class PerfBinaryTreeEnv(gym.Env):
     Action:
     """
 
-    def __init__(self, depth=5, seed=0):
+    def __init__(self,
+                 depth=5,
+                 terminal_high_rew_prob=0.2,
+                 seed=0):
         """
         TODO write docs
         """
@@ -28,7 +31,7 @@ class PerfBinaryTreeEnv(gym.Env):
         self.depth = depth
         self.n_states = (2**self.depth) - 1
         self.feature_dim = self.n_states  # tabular
-        self.terminal_high_rew_prob = 0.2
+        self.terminal_high_rew_prob = terminal_high_rew_prob
 
         # ==
         # Initialize spaces
