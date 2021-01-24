@@ -88,11 +88,17 @@ class LSF_ACLambda(ACLambda):
             with torch.no_grad():
                 # TD error
                 V_last = self.model(last_state)[1]
-                delta = (self.discount_gamma * (0 if is_terminal else V_curr)
+                delta = (self.discount_gamma *
+                         (0 if is_terminal else lsf_V_curr)
                          + reward - V_last)
 
                 # Update
                 self.parameter_step(delta, time_step)
+
+                # For logging: compute difference in estimate
+                lsf_v_theta_v_diff = torch.norm(
+                    (lsf_V_curr - V_curr)
+                )
 
         # Accumulating trace (Always update trace)
         self.accumulate_eligibility_traces()
@@ -106,6 +112,7 @@ class LSF_ACLambda(ACLambda):
                 'value_loss': delta.item() ** 2,
                 'sf_loss': sf_loss.item(),
                 'reward_loss': rew_loss.item(),
+                'lsf_v_v_diff': lsf_v_theta_v_diff.item(),
             }
 
         return out_dict

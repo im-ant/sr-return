@@ -25,17 +25,23 @@ source $HOME/venvs/rlpyt/bin/activate
 python -u train_incremental.py --multirun \
     hydra.run.dir=$sweep_parent_dir \
     hydra.sweep.dir=$sweep_parent_dir \
-    runner.n_steps=1e5 \
-    runner.kwargs.log_interval_episodes=100 \
-    env.kwargs.env_name='breakout' \
+    runner.n_steps=5e6 \
+    runner.kwargs.log_interval_episodes=50 \
+    runner.kwargs.store_checkpoint=True \
+    runner.kwargs.checkpoint_freq=5000 \
+    env.kwargs.env_name='asterix' \
     algo=lsf_ac_lambda \
     algo.kwargs.lr_alpha=0.00048828125 \
-    algo.kwargs.trace_lambda=0.0,0.5,0.95 \
-    algo.kwargs.sf_lambda=0.0,0.5,0.95 \
+    algo.kwargs.trace_lambda=0.0 \
+    algo.kwargs.sf_lambda=0.3,0.8 \
     model=lsf_ac_network \
     model.kwargs.fc_sizes=128 \
-    model.kwargs.sf_hidden_sizes=[256],[256,256] \
-    training.seed=2,4 \
+    model.kwargs.sf_hidden_sizes=null \
+    training.seed=3,6,9,12,15 \
+
+#    model.kwargs.sf_hidden_sizes=null \
+#    algo.kwargs.sf_lambda=0.3,0.7,0.95,0.0 \
+
 
 # (4) Copy things over to scratch?
 # cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/
