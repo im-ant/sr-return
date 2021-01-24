@@ -45,6 +45,7 @@ class LogTupStruct:
     v_fn_rmse: float = None
     sf_G_rmse: float = None
     sf_matrix_rmse: float = None
+    reward_vec_rmse: float = None
     value_loss_avg: float = None  # agent log dict specific logs
     reward_loss_avg: float = None
     sf_loss_avg: float = None
@@ -145,9 +146,12 @@ def _pre_compute(cfg: DictConfig, environment, agent) -> dict:
         (cfg.agent.kwargs.gamma * cfg.agent.kwargs.lamb)
     )
 
+    true_reward_vec = environment.get_reward_function()
+
     out_dict = {
         'true_value_vec': true_v_fn,
         'true_sf_mat': true_sf_mat,
+        'true_reward_vec': true_reward_vec,
     }
 
     return out_dict
@@ -226,14 +230,20 @@ def write_post_episode_log(cfg: DictConfig,
     log_dict['v_fn_rmse'] = mut.evaluate_value_rmse(
         environment, agent, pre_comput_dict['true_value_vec']
     )
-    # For LSF value function
-    log_dict['sf_G_rmse'] = mut.evaluate_sf_ret_rmse(
-        environment, agent, pre_comput_dict['true_value_vec']
-    )
+
     # (Optional) for SF matrix (NOTE: hard-coded)
     if cfg.agent.cls_string == 'SFReturnAgent':
+        # For LSF value function
+        log_dict['sf_G_rmse'] = mut.evaluate_sf_ret_rmse(
+            environment, agent, pre_comput_dict['true_value_vec']
+        )
+
         log_dict['sf_matrix_rmse'] = mut.evaluate_sf_mat_rmse(
             environment, agent, pre_comput_dict['true_sf_mat']
+        )
+
+        log_dict['reward_vec_rmse'] = mut.evaluate_reward_rmse(
+            environment, agent, pre_comput_dict['true_reward_vec']
         )
 
     # ==
@@ -259,7 +269,7 @@ def write_post_episode_log(cfg: DictConfig,
     if logger is not None:
         logger.info(log_str)
     else:
-        if (episode_idx + 1) % args.log_print_freq == 0:
+        if (episode_idx + 1) % args.log_print_freq == 0:  # I think this is not used anymore
             print(log_str)
 
 

@@ -160,5 +160,21 @@ def evaluate_sf_mat_rmse(env, agent, true_sf_mat) -> float:
     return compute_rmse(esti_sf_mat, true_sf_mat)
 
 
+def evaluate_reward_rmse(env, agent, true_rew_vec) -> float:
+    """
+    Compute the RMSE for the (instantenous) reward estimates
+    :param env:
+    :param agent:
+    :return:
+    """
+
+    # NOTE: assumes parameter is available
+    rew_param = agent.Wr  # (d,) vec
+    phiMat = env.get_feature_matrix()  # (N, d) feature mat
+
+    esti_rew_vec = phiMat @ rew_param
+    return compute_rmse(esti_rew_vec, true_rew_vec)
+
+
 if __name__ == "__main__":
     print('hello world')
