@@ -1,0 +1,5 @@
+# @package _group_
+cls_string: "FanInBinaryTreeEnv"
+kwargs:
+  depth: 5
+  terminal_reward_stdev: 2.0

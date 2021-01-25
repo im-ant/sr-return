@@ -23,6 +23,7 @@ from envs.bipolar_chain import BipolarChainEnv
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 from envs.perf_bin_tree import PerfBinaryTreeEnv
+from envs.fan_in_bin_tree import FanInBinaryTreeEnv
 import utils.mdp_utils as mut
 
 
