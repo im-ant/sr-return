@@ -1,6 +1,5 @@
 # ============================================================================
-# Perfect Binary Tree Environment to evaluate a "Fan-out" / "Broadcasting"
-# environment's effect on credit assignment 
+# Fan-in tree to evaluate credit assignment.
 #
 # Author: Anthony G. Chen
 # ============================================================================
@@ -9,19 +8,16 @@ import gym
 import numpy as np
 
 
-class PerfBinaryTreeEnv(gym.Env):
+class FanInBinaryTreeEnv(gym.Env):
     """
-    Description: Perfect Binary Tree environment, reward only at the leaf
-                 nodes.
-
+    Description: Fan in binary tree environment. Reward only at the end.
     State space: NOTE tabular for now
-
-    Action:
+    Action: 1
     """
 
     def __init__(self,
                  depth=5,
-                 terminal_high_rew_prob=0.2,
+                 terminal_reward_stdev=1.0,
                  seed=0):
         """
         TODO write docs
@@ -29,9 +25,10 @@ class PerfBinaryTreeEnv(gym.Env):
 
         # Attributes
         self.depth = depth
-        self.n_states = (2**self.depth) - 1
+        self.n_states = 2**self.depth - 1
         self.feature_dim = self.n_states  # tabular
-        self.terminal_high_rew_prob = terminal_high_rew_prob
+
+        self.terminal_reward_stdev = terminal_reward_stdev
 
         # ==
         # Initialize spaces
@@ -43,7 +40,8 @@ class PerfBinaryTreeEnv(gym.Env):
         )
 
         self.rng = np.random.default_rng(seed)
-        self.state = 1  # ancestor node
+        self.state = (2**self.depth - 1
+                      - self.rng.integers(2**(self.depth-1)))
 
     def step(self, action):
         """
@@ -57,15 +55,12 @@ class PerfBinaryTreeEnv(gym.Env):
         reward = self.get_current_reward(self.state)
 
         # Leaf and absorbing nodes
-        if self.state >= (2**(self.depth-1)):
+        if self.state <= 1:
             done = True
-            if self.state < (2**self.depth):
-                self.state = (2 ** self.depth)  # go to absorbing
-        # Non-leaf nodes
+            if self.state == 1:
+                self.state = 0  # go to absorbing
         else:
-            # Random transition to child node (non leaf nodes)
-            child_idx = self.rng.choice([0, 1])
-            self.state = (self.state * 2) + child_idx
+            self.state = int(self.state // 2)
 
         # ==
         # Features
@@ -78,24 +73,10 @@ class PerfBinaryTreeEnv(gym.Env):
         Method to get the reward of exiting a state
         :return: float
         """
-
-        # For final absorption state (should never need this if
-        # the episode terminates on done)
-        if state == (2**self.depth):
+        if state == 1:
+            return 1.0 + self.rng.normal(scale=self.terminal_reward_stdev)
+        else:
             return 0.0
-        # For non-leaf states
-        elif state < (2**(self.depth-1)):
-            return 0.0  # TODO: default reward 0 or 1?
-
-        # ==
-        # For leaf states
-
-        hig_rew = state - (2**(self.depth-1))
-        low_rew = 0.0
-
-        p = self.terminal_high_rew_prob
-        rew = self.rng.choice([hig_rew, low_rew], p=[p, (1-p)])
-        return rew
 
     def state_2_features(self, state):
         """
@@ -115,7 +96,8 @@ class PerfBinaryTreeEnv(gym.Env):
         return phi
 
     def reset(self):
-        self.state = 1
+        self.state = (2 ** self.depth - 1
+                      - self.rng.integers(2 ** (self.depth - 1)))
         phi = self.state_2_features(self.state)
         return phi
 
@@ -136,13 +118,8 @@ class PerfBinaryTreeEnv(gym.Env):
         P_trans = np.zeros((self.n_states, self.n_states))
 
         # Fill
-        for s_num in range(1, (2**(self.depth-1))):
-            s_idx = s_num - 1
-            child1_idx = s_num*2 - 1
-            child2_idx = s_num*2
-
-            P_trans[s_idx, child1_idx] = 0.5
-            P_trans[s_idx, child2_idx] = 0.5
+        for s_num in range(2, (2**self.depth)):
+            P_trans[(s_num - 1), (s_num//2 - 1)] = 1.0
 
         return P_trans
 
@@ -153,16 +130,7 @@ class PerfBinaryTreeEnv(gym.Env):
         :return: (self.n_states) vector
         """
         R_fn = np.zeros(self.n_states)
-        p = self.terminal_high_rew_prob
-
-        # Iterate over leaf states
-        for l_state in range((2**(self.depth-1)), (2 ** self.depth)):
-            cur_hig_rew = l_state - (2**(self.depth-1))
-            cur_low_rew = 0.0
-            cur_avg_rew = (p * cur_hig_rew) + ((1-p) * cur_low_rew)
-
-            sIdx = l_state - 1
-            R_fn[sIdx] = cur_avg_rew
+        R_fn[0] = 1.0
 
         return R_fn
 
@@ -178,14 +146,6 @@ class PerfBinaryTreeEnv(gym.Env):
 
         return phi_mat
 
-    def solve_linear_reward_parameters(self):
-        """
-        Helper function to solve for the best-fit linear parameters for the
-        reward function.
-        :return: (self.feature_dim, ) parameters for reward fn
-        """
-        raise NotImplementedError
-
     def render(self):
         pass
 
@@ -199,20 +159,20 @@ if __name__ == '__main__':
     # np.random.seed(seed)
 
     # add back stuff about env and running env?
-    env = PerfBinaryTreeEnv(depth=3,
-                            seed=seed)
+    env = FanInBinaryTreeEnv(depth=3,
+                             seed=seed)
 
     P = env.get_transition_matrix()
     print('trans mat shape', np.shape(P))
-    # print(P)
+    print(P)
 
     R = env.get_reward_function()
     print('rew function shape', np.shape(R))
-    # print(R)
+    print(R)
 
     # Solve for tabular value fn
     n_states = env.get_num_states()
-    gamma = 1.0
+    gamma = 0.9
     c_mat = (np.identity(n_states) - (gamma * P))
     sr_mat = np.linalg.inv(c_mat)
     v_fn_tab = sr_mat @ R
@@ -220,15 +180,15 @@ if __name__ == '__main__':
     np.set_printoptions(precision=3)
 
     print('tabular SR', np.shape(sr_mat))
-    # print(sr_mat)
+    print(sr_mat)
     print('tabular value function:')
     print(v_fn_tab)
 
     # ==
-    print('=== Matrices ===')
-    print(env.get_transition_matrix()[0:8, 0:8])
-    print(env.get_reward_function())
-    print(env.get_feature_matrix()[0:8, 0:8])
+    #print('=== Matrices ===')
+    #print(env.get_transition_matrix()[0:8, 0:8])
+    #print(env.get_reward_function())
+    #print(env.get_feature_matrix()[0:8, 0:8])
 
     # ==
     # Run a few

@@ -1,5 +1,6 @@
 defaults:
   - agent: sf_return
+  - env: perf_bin_tree
   - hydra/job_logging: disabled
 
 training:
@@ -10,9 +11,7 @@ logging:
   dir_path: './'
   print_freq: 100
 
-env:
-  cls_string: 'PerfBinaryTreeEnv'
-  kwargs: {}
+env: {}
 
 agent:
   kwargs:

@@ -8,6 +8,7 @@ import argparse
 import configparser
 import dataclasses
 from itertools import product
+import json
 import logging
 import os
 
@@ -23,6 +24,8 @@ from envs.bipolar_chain import BipolarChainEnv
 from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 from envs.perf_bin_tree import PerfBinaryTreeEnv
+from envs.fan_in_bin_tree import FanInBinaryTreeEnv
+from envs.linear_chain import SimpleLinearChainEnv
 import utils.mdp_utils as mut
 
 
@@ -45,6 +48,7 @@ class LogTupStruct:
     v_fn_rmse: float = None
     sf_G_rmse: float = None
     sf_matrix_rmse: float = None
+    reward_vec_rmse: float = None
     value_loss_avg: float = None  # agent log dict specific logs
     reward_loss_avg: float = None
     sf_loss_avg: float = None
@@ -145,9 +149,12 @@ def _pre_compute(cfg: DictConfig, environment, agent) -> dict:
         (cfg.agent.kwargs.gamma * cfg.agent.kwargs.lamb)
     )
 
+    true_reward_vec = environment.get_reward_function()
+
     out_dict = {
         'true_value_vec': true_v_fn,
         'true_sf_mat': true_sf_mat,
+        'true_reward_vec': true_reward_vec,
     }
 
     return out_dict
@@ -226,14 +233,20 @@ def write_post_episode_log(cfg: DictConfig,
     log_dict['v_fn_rmse'] = mut.evaluate_value_rmse(
         environment, agent, pre_comput_dict['true_value_vec']
     )
-    # For LSF value function
-    log_dict['sf_G_rmse'] = mut.evaluate_sf_ret_rmse(
-        environment, agent, pre_comput_dict['true_value_vec']
-    )
+
     # (Optional) for SF matrix (NOTE: hard-coded)
     if cfg.agent.cls_string == 'SFReturnAgent':
+        # For LSF value function
+        log_dict['sf_G_rmse'] = mut.evaluate_sf_ret_rmse(
+            environment, agent, pre_comput_dict['true_value_vec']
+        )
+
         log_dict['sf_matrix_rmse'] = mut.evaluate_sf_mat_rmse(
             environment, agent, pre_comput_dict['true_sf_mat']
+        )
+
+        log_dict['reward_vec_rmse'] = mut.evaluate_reward_rmse(
+            environment, agent, pre_comput_dict['true_reward_vec']
         )
 
     # ==
@@ -259,7 +272,7 @@ def write_post_episode_log(cfg: DictConfig,
     if logger is not None:
         logger.info(log_str)
     else:
-        if (episode_idx + 1) % args.log_print_freq == 0:
+        if (episode_idx + 1) % args.log_print_freq == 0:  # I think this is not used anymore
             print(log_str)
 
 
@@ -315,6 +328,47 @@ def run_single_linear_experiment(cfg: DictConfig,
                 # ==
                 # Terminate
                 break
+
+        # (Optional) Write matrices
+        # if episode_idx % 1 == 0:
+        #     save_checkpoint(cfg, agent, episode_idx)
+
+
+def save_checkpoint(cfg: DictConfig, agent, episode_idx):
+    """
+    Helper method to manually write to file
+    :return:
+    """
+    ckpt_dict = {'episode_idx': episode_idx}
+
+    # ==
+    # Convert config to dict
+    cfg_dict = OmegaConf.to_container(cfg)
+    ckpt_dict['cfg'] = cfg_dict
+
+    # ==
+    # Save key parameters of agents
+    ckpt_dict['agent'] = {}
+
+    attri_list = ['Wq', 'Wz', 'Wr', 'Ws', 'Wv']
+    for att_str in attri_list:
+        if hasattr(agent, att_str):
+            cur_att = getattr(agent, att_str)
+            ckpt_dict['agent'][att_str] = cur_att.tolist()
+
+    # ==
+    # Write out
+    out_dir_path = './checkpoint'  # TODO don't hard code
+    if not os.path.isdir(out_dir_path):
+        os.mkdir(out_dir_path)
+    agent_lamb_str = str(cfg.agent.kwargs.lamb).replace('.', 'o')
+    out_file_name = f'ckpt_epis-{episode_idx}' \
+                    f'_{cfg.agent.cls_string}' \
+                    f'_lamb-{agent_lamb_str}.json'
+    out_file_path = os.path.join(out_dir_path, out_file_name)
+
+    with open(out_file_path, 'w') as outfile:
+        json.dump(ckpt_dict, outfile)
 
 
 def run_experiments(cfg: DictConfig, logger=None):

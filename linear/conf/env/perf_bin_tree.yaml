@@ -2,3 +2,4 @@
 cls_string: "PerfBinaryTreeEnv"
 kwargs:
   depth: 5
+  terminal_high_rew_prob: 1.0
