@@ -23,6 +23,9 @@ class BaseLinearAgent(object):
         # Saving single-episode trajectory
         self.traj = None
 
+        # Log
+        self.log_dict = None
+
         # RNG
         self.rng = np.random.default_rng(seed)
 

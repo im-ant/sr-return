@@ -1,0 +1,4 @@
+# @package _group_
+cls_string: "PerfBinaryTreeEnv"
+kwargs:
+  depth: 5

@@ -1,0 +1,20 @@
+defaults:
+  - agent: sf_return
+  - hydra/job_logging: disabled
+
+training:
+  num_episodes: 20
+  seed: 0
+
+logging:
+  dir_path: './'
+  print_freq: 100
+
+env:
+  cls_string: 'PerfBinaryTreeEnv'
+  kwargs: {}
+
+agent:
+  kwargs:
+    lr: 0.1
+    gamma: 0.9

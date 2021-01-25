@@ -1,0 +1,35 @@
+defaults:
+  - model: categorical_pg_lsf_ff
+  - algo: a2c_lsf
+training:
+  seed: null
+runner:
+  kwargs:
+    n_steps: 1e6
+    log_interval_steps: 1e3
+sampler:
+  kwargs:
+    batch_T: 10  # batch (temporal) length
+    batch_B: 1  # batch size
+    max_decorrelation_steps: 0
+    eval_n_envs: 0
+    eval_max_steps: 10000
+    eval_max_trajectories: 0
+logger_context:
+  kwargs:
+    snapshot_mode: 'none'
+    override_prefix: True
+    log_dir: './'  # default to hydra's cwd
+    use_summary_writer: True
+environment:
+  kwargs:
+    name: 'MiniGrid-Empty-5x5-v0'  # 'MiniGrid-Dynamic-Obstacles-5x5-v0', 'MiniGrid-Empty-5x5-v0'
+model:
+  cls_string: 'CategoricalLsfFfModel'
+  kwargs: {}
+agent:
+  cls_string: 'CategoricalPgLsfAgent'
+algo:
+  cls_string: 'A2C_LSF'
+  kwargs:
+    discount: 0.9

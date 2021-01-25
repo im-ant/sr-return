@@ -1,0 +1,5 @@
+# @package _group_
+cls_string: "BipolarChainEnv"
+kwargs:
+  n_states: 20
+  reward_magnitude: 10
