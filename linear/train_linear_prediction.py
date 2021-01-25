@@ -8,6 +8,7 @@ import argparse
 import configparser
 import dataclasses
 from itertools import product
+import json
 import logging
 import os
 
@@ -327,7 +328,48 @@ def run_single_linear_experiment(cfg: DictConfig,
                 # ==
                 # Terminate
                 break
-        
+
+        # (Optional) Write matrices
+        # if episode_idx % 1 == 0:
+        #     save_checkpoint(cfg, agent, episode_idx)
+
+
+def save_checkpoint(cfg: DictConfig, agent, episode_idx):
+    """
+    Helper method to manually write to file
+    :return:
+    """
+    ckpt_dict = {'episode_idx': episode_idx}
+
+    # ==
+    # Convert config to dict
+    cfg_dict = OmegaConf.to_container(cfg)
+    ckpt_dict['cfg'] = cfg_dict
+
+    # ==
+    # Save key parameters of agents
+    ckpt_dict['agent'] = {}
+
+    attri_list = ['Wq', 'Wz', 'Wr', 'Ws', 'Wv']
+    for att_str in attri_list:
+        if hasattr(agent, att_str):
+            cur_att = getattr(agent, att_str)
+            ckpt_dict['agent'][att_str] = cur_att.tolist()
+
+    # ==
+    # Write out
+    out_dir_path = './checkpoint'  # TODO don't hard code
+    if not os.path.isdir(out_dir_path):
+        os.mkdir(out_dir_path)
+    agent_lamb_str = str(cfg.agent.kwargs.lamb).replace('.', 'o')
+    out_file_name = f'ckpt_epis-{episode_idx}' \
+                    f'_{cfg.agent.cls_string}' \
+                    f'_lamb-{agent_lamb_str}.json'
+    out_file_path = os.path.join(out_dir_path, out_file_name)
+
+    with open(out_file_path, 'w') as outfile:
+        json.dump(ckpt_dict, outfile)
+
 
 def run_experiments(cfg: DictConfig, logger=None):
     """
