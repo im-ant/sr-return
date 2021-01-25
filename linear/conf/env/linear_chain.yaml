@@ -1,0 +1,6 @@
+# @package _group_
+cls_string: "SimpleLinearChainEnv"
+kwargs:
+  n_states: 13
+  skip_prob: 0.1
+  terminal_reward_stdev: 0.1

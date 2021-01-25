@@ -24,6 +24,7 @@ from envs.boyans_chain import BoyansChainEnv
 from envs.random_walk_chain import RandomWalkChainEnv
 from envs.perf_bin_tree import PerfBinaryTreeEnv
 from envs.fan_in_bin_tree import FanInBinaryTreeEnv
+from envs.linear_chain import SimpleLinearChainEnv
 import utils.mdp_utils as mut
 
 
@@ -326,7 +327,7 @@ def run_single_linear_experiment(cfg: DictConfig,
                 # ==
                 # Terminate
                 break
-
+        
 
 def run_experiments(cfg: DictConfig, logger=None):
     """
