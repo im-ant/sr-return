@@ -6,6 +6,7 @@ defaults:
 training:
   num_episodes: 20
   seed: 0
+  save_checkpoint: null
 
 logging:
   dir_path: './'

@@ -11,6 +11,7 @@ from itertools import product
 import json
 import logging
 import os
+import uuid
 
 import gym
 import hydra
@@ -330,8 +331,10 @@ def run_single_linear_experiment(cfg: DictConfig,
                 break
 
         # (Optional) Write matrices
-        # if episode_idx % 1 == 0:
-        #     save_checkpoint(cfg, agent, episode_idx)
+        if cfg.training.save_checkpoint is not None:
+            if ((cfg.training.save_checkpoint > 0) and
+                    (episode_idx % cfg.training.save_checkpoint == 0)):
+                save_checkpoint(cfg, agent, episode_idx)
 
 
 def save_checkpoint(cfg: DictConfig, agent, episode_idx):
@@ -358,13 +361,12 @@ def save_checkpoint(cfg: DictConfig, agent, episode_idx):
 
     # ==
     # Write out
-    out_dir_path = './checkpoint'  # TODO don't hard code
+    out_dir_path = './checkpoint'  # TODO don't hard code?
     if not os.path.isdir(out_dir_path):
         os.mkdir(out_dir_path)
-    agent_lamb_str = str(cfg.agent.kwargs.lamb).replace('.', 'o')
+    rand_str = str(uuid.uuid4().hex)
     out_file_name = f'ckpt_epis-{episode_idx}' \
-                    f'_{cfg.agent.cls_string}' \
-                    f'_lamb-{agent_lamb_str}.json'
+                    f'_{rand_str}.json'
     out_file_path = os.path.join(out_dir_path, out_file_name)
 
     with open(out_file_path, 'w') as outfile:
