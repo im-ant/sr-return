@@ -85,6 +85,13 @@ class LSF_ACNetwork(ACNetwork):
         x = dSiLU(self.fc_hidden(x.view(x.size(0), -1)))
         return x
 
+    def compute_sf_from_phi(self, phi):
+        """Compute SF from feature"""
+        if self.detach_sf_grad:
+            return self.sf_fn(phi.detach().clone())
+        else:
+            return self.sf_fn(phi)
+
     def forward(self, x):
         # Feature extract
         x = self.compute_phi(x)
@@ -101,10 +108,7 @@ class LSF_ACNetwork(ACNetwork):
         v = self.value(x)
 
         # Successor feature
-        if self.detach_sf_grad:
-            sf = self.sf_fn(x.detach().clone())
-        else:
-            sf = self.sf_fn(x)
+        sf = self.compute_sf_from_phi(x)
 
         # Reward
         r = self.reward_layer(x)

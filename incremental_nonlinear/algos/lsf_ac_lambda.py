@@ -67,7 +67,7 @@ class LSF_ACLambda(ACLambda):
 
             # SF loss
             phi_last = self.model.compute_phi(last_state)
-            sf_last = self.model.sf_fn(phi_last)  # (1, d)
+            sf_last = self.model.compute_sf_from_phi(phi_last)  # (1, d)
             sf_target = phi_last.detach().clone() + (
                     (self.sf_lambda * self.discount_gamma) * sf_curr.detach().clone()
             )  # TODO NOTE do I need to clone after detach?

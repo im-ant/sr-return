@@ -264,6 +264,7 @@ class IncrementalOnlineRunner(object):
 
         # ==
         # Write at interval
+        # TODO: should also do a write at the last step
         if episode_count % self.log_interval_episodes == 0:
             log_dict = avg_log_dict(self.log_interval_sum_dict,
                                     self.log_interval_episodes)
