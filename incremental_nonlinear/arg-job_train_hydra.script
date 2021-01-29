@@ -37,10 +37,8 @@ python -u train_incremental.py --multirun \
     model=lsf_ac_network \
     model.kwargs.fc_sizes=128 \
     model.kwargs.sf_hidden_sizes=null \
-    training.seed=3,6,9,12,15 \
-
-#    model.kwargs.sf_hidden_sizes=null \
-#    algo.kwargs.sf_lambda=0.3,0.7,0.95,0.0 \
+    model.kwargs.detach_sf_grad=True \
+    training.seed=9,12,15 \
 
 
 # (4) Copy things over to scratch?
