@@ -57,6 +57,9 @@ class ACLambda:
             'value.weight', 'value.bias',
         ]
 
+        self.indiv_str_lr_dict = {}  # specified by user
+        self.params_lr_dict = {}  # initialized
+
     def initialize(self, env, device):
         """Initialize agent"""
         in_channels = env.state_shape()[2]
@@ -73,6 +76,7 @@ class ACLambda:
         self.msgrads = {}
 
         for name, param in self.model.named_parameters():
+            # For traces
             if name in self.trace_param_list:
                 self.traces[name] = torch.zeros(
                     param.size(), dtype=torch.float32, device=device
@@ -81,12 +85,19 @@ class ACLambda:
                 self.grads[name] = torch.zeros(
                     param.size(), dtype=torch.float32, device=device
                 )
-
+            # Mean squared grad for RMSProp
             self.msgrads[name] = torch.zeros(
                 param.size(), dtype=torch.float32, device=device
             )
 
-        print(self.model)  # TODO delete?
+            # Populate the specific learning rate dictionary
+            for parent_str in self.indiv_str_lr_dict:
+                if name.startswith(parent_str):
+                    self.params_lr_dict[name] = \
+                        self.indiv_str_lr_dict[parent_str]
+
+        print('self.params_lr_dict', self.params_lr_dict)
+        print(self.model)  # TODO delete this and above?
 
     def optimize_agent(self, sample, time_step):
 
@@ -172,8 +183,12 @@ class ACLambda:
             )
 
             # Update model parameters
+            cur_param_lr = self.lr_alpha
+            if name in self.params_lr_dict:
+                cur_param_lr = self.params_lr_dict[name]
+
             self.model.state_dict()[name].copy_(
-                param + self.lr_alpha * (grad / delta_denom)
+                param + cur_param_lr * (grad / delta_denom)
             )
 
     def store_current_trace_grads(self) -> None:
