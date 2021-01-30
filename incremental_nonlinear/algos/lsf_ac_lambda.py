@@ -21,7 +21,8 @@ class LSF_ACLambda(ACLambda):
     def __init__(self, ModelCls, model_kwargs,
                  discount_gamma=0.99,
                  lr_alpha=0.00048828125,
-                 trace_lambda=0.8,
+                 sf_lr=0.00048828125,
+                 trace_lambda=0.0,
                  entropy_beta=0.01,
                  grad_rms_gamma=0.999,
                  grad_rms_eps=0.0001,
@@ -36,6 +37,11 @@ class LSF_ACLambda(ACLambda):
             grad_rms_eps=grad_rms_eps, min_denom=min_denom,
         )
         self.sf_lambda = sf_lambda
+
+        # NOTE: somewhat hacky for now
+        self.indiv_str_lr_dict = {
+            'sf_fn': sf_lr,
+        }
 
     def optimize_agent(self, sample, time_step):
 
