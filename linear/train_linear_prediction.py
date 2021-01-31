@@ -39,6 +39,8 @@ class LogTupStruct:
     seed: int = None
     gamma: float = None
     lr: float = None
+    sf_lr: float = None
+    reward_lr: float = None
     lamb: float = None
     eta_trace: float = None
     use_true_reward_params: bool = None
