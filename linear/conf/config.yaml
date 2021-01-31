@@ -16,5 +16,4 @@ env: {}
 
 agent:
   kwargs:
-    lr: 0.1
     gamma: 0.9
