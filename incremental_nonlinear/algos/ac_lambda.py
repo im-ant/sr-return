@@ -99,6 +99,9 @@ class ACLambda:
         print('self.params_lr_dict', self.params_lr_dict)
         print(self.model)  # TODO delete this and above?
 
+    def get_action(self, state):
+        return torch.multinomial(self.model(state)[0], 1)[0]
+
     def optimize_agent(self, sample, time_step):
 
         # states, next_states: (1, in_channel, 10, 10) - inline with pytorch NCHW format
