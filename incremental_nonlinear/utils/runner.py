@@ -368,3 +368,59 @@ class IncrementalOnlineRunner(BaseRunner):
         out_dict = self.algo.optimize_agent(sample, total_steps)
         return out_dict
 
+
+class BatchedOfflineRunner(BaseRunner):
+    def __init__(self, algo, EnvCls, env_kwargs,
+                 BufferCls, buffer_kwargs,
+                 batch_size=32,
+                 replay_start_buffer_size=5000,
+                 train_every_n_frames=1,
+                 log_interval_episodes=10,
+                 log_dir_path=None,
+                 store_checkpoint=False,
+                 checkpoint_type='interval',
+                 checkpoint_freq=2000,
+                 checkpoint_dir_path='./checkpoints/',
+                 load_model_path=None,
+                 device='cpu'):
+        super().__init__(
+            algo, EnvCls, env_kwargs,
+            log_interval_episodes=log_interval_episodes,
+            log_dir_path=log_dir_path,
+            store_checkpoint=store_checkpoint,
+            checkpoint_type=checkpoint_type,
+            checkpoint_freq=checkpoint_freq,
+            checkpoint_dir_path=checkpoint_dir_path,
+            load_model_path=load_model_path,
+            device=device,
+        )
+
+        self.replay_buffer = BufferCls(**buffer_kwargs)
+        self.replay_start_buffer_size = replay_start_buffer_size
+        self.batch_size = batch_size
+        self.train_every_n_frames = train_every_n_frames
+
+    def one_training_step(self, sample, total_steps):
+        # ==
+        # Add experience to replay buffer
+        self.replay_buffer.add(sample)
+
+        out_dict = {}
+        if total_steps % self.train_every_n_frames == 0:
+            # ==
+            # Sample from buffer
+            batch_sample = None
+            cur_buffer_size = self.replay_buffer.get_size()
+            if ((cur_buffer_size > self.replay_start_buffer_size)
+                    and (cur_buffer_size > self.batch_size)):
+                sample_batch = self.replay_buffer.sample(self.batch_size)  # (batch_n, tuple)
+                batch_sample = TransitionTuple(
+                    *[torch.cat(e) for e in zip(*sample_batch)]
+                )  # (tuple key: torch.tensor of (batch_n, *)
+
+            # ==
+            # Train
+            if batch_sample is not None:
+                out_dict = self.algo.optimize_agent(batch_sample, total_steps)
+
+        return out_dict
