@@ -21,12 +21,14 @@ class LSF_ACLambda(ACLambda):
     def __init__(self, ModelCls, model_kwargs,
                  discount_gamma=0.99,
                  lr_alpha=0.00048828125,
-                 trace_lambda=0.8,
+                 sf_lr=0.00048828125,
+                 trace_lambda=0.0,
                  entropy_beta=0.01,
                  grad_rms_gamma=0.999,
                  grad_rms_eps=0.0001,
                  min_denom=0.0001,
                  sf_lambda=0.0,
+                 seed=None,  # dummy
                  ):
         # TODO: put more things as arguments
         super().__init__(
@@ -37,83 +39,92 @@ class LSF_ACLambda(ACLambda):
         )
         self.sf_lambda = sf_lambda
 
+        # NOTE: somewhat hacky for now
+        self.indiv_str_lr_dict = {
+            'sf_fn': sf_lr,
+        }
+
     def optimize_agent(self, sample, time_step):
 
-        # states, next_states: (1, in_channel, 10, 10) - inline with pytorch NCHW format
-        # actions, rewards, is_terminal: (1, 1)
-        last_state = sample.last_state
-        state = sample.state
-        action = sample.action
-        reward = sample.reward
-        is_terminal = sample.is_terminal
+        # ==
+        # Unpack sample
+        state = sample.state  # (batch_n=1, channel, height, width)
+        next_state = sample.next_state  # (batch_n, c, h w)
+        action = sample.action  # (batch_n=1, 1)
+        reward = sample.reward  # (batch_n=1, 1)
+        is_terminal = sample.is_terminal  # (batch_n=1, 1)
 
         model_out_tup = self.model.compute_pi_v_sf_r_lsfv(state,
                                                           self.sf_lambda)
         pi, V_curr, sf_curr, r_curr, lsf_V_curr, phi_curr = model_out_tup
 
-        # Compute the targets
+        # ==
+        # Compute eligibility trace
         trace_potential = V_curr + 0.5 * torch.log(pi[0, action] + self.min_denom)
-        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
+        # TODO: add sum for batch dim?
 
         # Gradients to be combined with elig traces
         self.model.zero_grad()
         trace_potential.backward(retain_graph=True)
         self.store_current_trace_grads()
 
-        # Update parameters except for on the first observation
-        if last_state is not None:
-            # ==
-            # More losses
-
-            # SF loss
-            phi_last = self.model.compute_phi(last_state)
-            sf_last = self.model.compute_sf_from_phi(phi_last)  # (1, d)
-            sf_target = phi_last.detach().clone() + (
-                    (self.sf_lambda * self.discount_gamma) * sf_curr.detach().clone()
-            )  # TODO NOTE do I need to clone after detach?
-            sf_loss = torch.mean(0.5 * (sf_target - sf_last) ** 2)
-
-            # Reward loss  # TODO check if dimension is correct
-            rew_last = self.model.reward_layer(phi_last)[0]
-            rew_loss = 0.5 * (reward - rew_last) ** 2
-
-            # Combine non-trace losses to optimize
-            non_trace_loss = (
-                    (0.5 * sf_loss) + (0.5 * rew_loss)
-                    - (self.entropy_beta * entropy)
-            )  # TODO add customizable coefficients
-            self.model.zero_grad()
-            non_trace_loss.backward()
-
-            with torch.no_grad():
-                # TD error
-                V_last = self.model(last_state)[1]
-                delta = (self.discount_gamma *
-                         (0 if is_terminal else lsf_V_curr)
-                         + reward - V_last)
-
-                # Update
-                self.parameter_step(delta, time_step)
-
-                # For logging: compute difference in estimate
-                lsf_v_theta_v_diff = torch.norm(
-                    (lsf_V_curr - V_curr)
-                )
-
-        # Accumulating trace (Always update trace)
+        # Accumulating trace with stored gradients
         self.accumulate_eligibility_traces()
 
         # ==
+        # Compute additional losses
+        # TODO for all below, sum across batch dimension?
+        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
+
+        # SF loss
+        with torch.no_grad():
+            phi_next = self.model.compute_phi(next_state)
+            sf_next = self.model.compute_sf_from_phi(phi_next)  # (1, d)
+        sf_target = phi_curr.detach().clone() + (
+                (self.sf_lambda * self.discount_gamma) * sf_next.detach()
+        )  # TODO NOTE do I need to clone after detach?
+        sf_loss = torch.mean(0.5 * (sf_target - sf_curr) ** 2)
+
+        # Reward loss
+        # rew_last = self.model.reward_layer(phi_last)[0]  # TODO delete
+        rew_loss = 0.5 * (reward - r_curr) ** 2
+
+        # Combine non-trace losses to optimize
+        non_trace_loss = (
+                (0.5 * sf_loss) + (0.5 * rew_loss)
+                - (self.entropy_beta * entropy)
+        )  # TODO add customizable coefficients
+        self.model.zero_grad()
+        non_trace_loss.backward()
+
+        with torch.no_grad():
+            # TD error
+            _, _, _, _, lsf_V_next, _ = self.model.compute_pi_v_sf_r_lsfv(
+                next_state, self.sf_lambda
+            )
+
+            lsf_V_next = self.model(next_state)[1]
+            delta = (self.discount_gamma *
+                     (0 if is_terminal else lsf_V_next)
+                     + reward - V_curr)
+
+            # Update
+            self.parameter_step(delta, time_step)
+
+            # For logging: compute difference in estimate
+            lsf_v_theta_v_diff = torch.norm(
+                (lsf_V_curr - V_curr)
+            )
+
+        # ==
         # Construct dict
-        out_dict = None
-        # TODO log the average trace magnitude
-        if last_state is not None:
-            out_dict = {
-                'value_loss': delta.item() ** 2,
-                'sf_loss': sf_loss.item(),
-                'reward_loss': rew_loss.item(),
-                'lsf_v_v_diff': lsf_v_theta_v_diff.item(),
-            }
+        # TODO log the average trace magnitude?
+        out_dict = {
+            'value_loss': delta.item() ** 2,
+            'sf_loss': sf_loss.item(),
+            'reward_loss': rew_loss.item(),
+            'lsf_v_v_diff': lsf_v_theta_v_diff.item(),
+        }
 
         return out_dict
 

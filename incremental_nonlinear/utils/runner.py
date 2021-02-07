@@ -40,6 +40,8 @@ def add_log_dict(sum_dict, new_dict) -> dict:
     """
     if sum_dict is None:
         return new_dict
+    if new_dict is None:
+        return sum_dict
 
     for k in new_dict:
         val = new_dict[k]
@@ -67,12 +69,20 @@ def avg_log_dict(sum_dict, n):
 
 # ==
 # For training samples
-TransitionTuple = namedtuple('transition', 'state, last_state, action, reward, is_terminal')
+TransitionTuple = namedtuple(
+    'transition',
+    'state, next_state, action, reward, is_terminal'
+)
 
 
 # ==
-# Runner object
-class IncrementalOnlineRunner(object):
+# Runner objects
+
+class BaseRunner(object):
+    """
+    Base runner object
+    """
+
     def __init__(self, algo, EnvCls, env_kwargs,
                  log_interval_episodes=10,
                  log_dir_path=None,
@@ -146,27 +156,30 @@ class IncrementalOnlineRunner(object):
         """
         return (torch.tensor(s, device=self.device).permute(2, 0, 1)).unsqueeze(0).float()
 
-    def world_dynamics(self, s, env, network):
+    def world_dynamics(self, s, env, algo, total_steps):
         # network(s)[0] specifies the policy network, which we use to draw an action according to a multinomial
         # distribution over axis 1, (axis 0 iterates over samples, and is unused in this case. torch._no_grad()
         # avoids tracking history in autograd.
         with torch.no_grad():
-            action = torch.multinomial(network(s)[0], 1)[0]  # TODO change to model
+            action = algo.get_action(s, total_steps).to(self.device)
 
         # Act according to the action and observe the transition and reward
         reward, terminated = env.act(action)
+        reward = torch.tensor([[reward]], device=self.device).float()
+        terminated = torch.tensor([[terminated]], device=self.device)
 
         # Obtain s_prime
         s_prime = self.get_state(env.state())
 
-        return s_prime, action, torch.tensor([[reward]], device=self.device).float(), torch.tensor([[terminated]],
-                                                                                                   device=self.device)
+        return s_prime, action, reward, terminated
+
+    def one_training_step(self, sample, total_steps):
+        """
+        One training step
+        """
+        raise NotImplementedError
 
     def train(self, n_steps):
-        """
-        Main training loop
-        :return:
-        """
         # ==
         # Setting up logging
         dc_fields = [k for k in vars(LogTupStruct())]  # temp object to get name
@@ -184,7 +197,7 @@ class IncrementalOnlineRunner(object):
         total_steps = 0
 
         env = self.environment
-        network = self.algo.model  # pass reference
+        algo = self.algo  # pass reference
 
         # ==
         # Run training
@@ -197,18 +210,22 @@ class IncrementalOnlineRunner(object):
 
             env.reset()
             s = self.get_state(env.state())
+            algo.episode_reset()  # clear elig traces, etc.
 
             is_terminated = False
-            s_last = None
-            r_last = None
-            term_last = None
+            # s_last = None  # TODO delete after
+            # r_last = None  # TODO delete after
+            #  term_last = None  # TODO delete after
 
             while (not is_terminated) and total_steps < n_steps:
                 # Generate data
-                s_prime, action, reward, is_terminated = self.world_dynamics(s, env, network)
-                sample = TransitionTuple(s, s_last, action, r_last, term_last)
+                s_prime, action, reward, is_terminated = self.world_dynamics(
+                    s, env, algo, total_steps,
+                )
+                # sample = TransitionTuple(s, s_last, action, r_last, term_last)  # TODO delete after this
+                sample = TransitionTuple(s, s_prime, action, reward, is_terminated)
 
-                out_dict = self.algo.optimize_agent(sample, total_steps)
+                out_dict = self.one_training_step(sample, total_steps)
 
                 # Accumulate
                 current_episode_return += reward.item()
@@ -217,19 +234,17 @@ class IncrementalOnlineRunner(object):
                 cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)
 
                 # Continue the process
-                s_last = s
-                r_last = reward
-                term_last = is_terminated
+                # s_last = s  # TODO delete after
+                # r_last = reward  # TODO delete after
+                # term_last = is_terminated  # TODO delete after
                 s = s_prime
 
             # Increment the episodes
             episode_count += 1
-            sample = TransitionTuple(s, s_last, action, r_last, term_last)
+            # sample = TransitionTuple(s, s_last, s_prime, action, r_last, term_last)  # TODO delete after this
+            # out_dict = self.algo.optimize_agent(sample, total_steps)  # TODO delete after this
+            # cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)  # TODO delete after this
 
-            out_dict = self.algo.optimize_agent(sample, total_steps)
-            self.algo.clear_eligibility_traces()  # clear trace
-
-            cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)
             cur_avg_dict = avg_log_dict(cur_sum_dict, current_episode_steps)
 
             # ==
@@ -326,3 +341,86 @@ class IncrementalOnlineRunner(object):
             with open(f'{out_path}.json', 'w') as fp:
                 json.dump(out_json, fp)
 
+
+class IncrementalOnlineRunner(BaseRunner):
+    def __init__(self, algo, EnvCls, env_kwargs,
+                 log_interval_episodes=10,
+                 log_dir_path=None,
+                 store_checkpoint=False,
+                 checkpoint_type='interval',
+                 checkpoint_freq=2000,
+                 checkpoint_dir_path='./checkpoints/',
+                 load_model_path=None,
+                 device='cpu'):
+        super().__init__(
+            algo, EnvCls, env_kwargs,
+            log_interval_episodes=log_interval_episodes,
+            log_dir_path=log_dir_path,
+            store_checkpoint=store_checkpoint,
+            checkpoint_type=checkpoint_type,
+            checkpoint_freq=checkpoint_freq,
+            checkpoint_dir_path=checkpoint_dir_path,
+            load_model_path=load_model_path,
+            device=device,
+        )
+
+    def one_training_step(self, sample, total_steps):
+        out_dict = self.algo.optimize_agent(sample, total_steps)
+        return out_dict
+
+
+class BatchedOfflineRunner(BaseRunner):
+    def __init__(self, algo, EnvCls, env_kwargs,
+                 BufferCls, buffer_kwargs,
+                 batch_size=32,
+                 replay_start_buffer_size=5000,
+                 train_every_n_frames=1,
+                 log_interval_episodes=10,
+                 log_dir_path=None,
+                 store_checkpoint=False,
+                 checkpoint_type='interval',
+                 checkpoint_freq=2000,
+                 checkpoint_dir_path='./checkpoints/',
+                 load_model_path=None,
+                 device='cpu'):
+        super().__init__(
+            algo, EnvCls, env_kwargs,
+            log_interval_episodes=log_interval_episodes,
+            log_dir_path=log_dir_path,
+            store_checkpoint=store_checkpoint,
+            checkpoint_type=checkpoint_type,
+            checkpoint_freq=checkpoint_freq,
+            checkpoint_dir_path=checkpoint_dir_path,
+            load_model_path=load_model_path,
+            device=device,
+        )
+
+        self.replay_buffer = BufferCls(**buffer_kwargs)
+        self.replay_start_buffer_size = replay_start_buffer_size
+        self.batch_size = batch_size
+        self.train_every_n_frames = train_every_n_frames
+
+    def one_training_step(self, sample, total_steps):
+        # ==
+        # Add experience to replay buffer
+        self.replay_buffer.add(sample)
+
+        out_dict = {}
+        if total_steps % self.train_every_n_frames == 0:
+            # ==
+            # Sample from buffer
+            batch_sample = None
+            cur_buffer_size = self.replay_buffer.get_size()
+            if ((cur_buffer_size > self.replay_start_buffer_size)
+                    and (cur_buffer_size > self.batch_size)):
+                sample_batch = self.replay_buffer.sample(self.batch_size)  # (batch_n, tuple)
+                batch_sample = TransitionTuple(
+                    *[torch.cat(e) for e in zip(*sample_batch)]
+                )  # (tuple key: torch.tensor of (batch_n, *)
+
+            # ==
+            # Train
+            if batch_sample is not None:
+                out_dict = self.algo.optimize_agent(batch_sample, total_steps)
+
+        return out_dict
