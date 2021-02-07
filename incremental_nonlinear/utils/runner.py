@@ -210,6 +210,7 @@ class BaseRunner(object):
 
             env.reset()
             s = self.get_state(env.state())
+            algo.episode_reset()  # clear elig traces, etc.
 
             is_terminated = False
             # s_last = None  # TODO delete after
@@ -241,8 +242,6 @@ class BaseRunner(object):
             # sample = TransitionTuple(s, s_last, s_prime, action, r_last, term_last)  # TODO delete after this
             # out_dict = self.algo.optimize_agent(sample, total_steps)  # TODO delete after this
             # cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)  # TODO delete after this
-
-            self.algo.clear_eligibility_traces()  # clear trace
 
             cur_avg_dict = avg_log_dict(cur_sum_dict, current_episode_steps)
 

@@ -99,6 +99,9 @@ class ACLambda:
         print('self.params_lr_dict', self.params_lr_dict)
         print(self.model)  # TODO delete this and above?
 
+    def episode_reset(self):
+        self.clear_eligibility_traces()
+
     def get_action(self, state):
         return torch.multinomial(self.model(state)[0], 1)[0]
 
