@@ -28,6 +28,7 @@ class LSF_ACLambda(ACLambda):
                  grad_rms_eps=0.0001,
                  min_denom=0.0001,
                  sf_lambda=0.0,
+                 seed=None,  # dummy
                  ):
         # TODO: put more things as arguments
         super().__init__(

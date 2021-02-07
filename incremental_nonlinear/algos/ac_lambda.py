@@ -26,7 +26,8 @@ class ACLambda:
                  entropy_beta=0.01,
                  grad_rms_gamma=0.999,
                  grad_rms_eps=0.0001,
-                 min_denom=0.0001
+                 min_denom=0.0001,
+                 seed=None,  # dummy
                  ):
         # TODO: input everything as argument
 
