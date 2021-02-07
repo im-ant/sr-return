@@ -102,7 +102,7 @@ class ACLambda:
     def episode_reset(self):
         self.clear_eligibility_traces()
 
-    def get_action(self, state):
+    def get_action(self, state, total_steps):
         return torch.multinomial(self.model(state)[0], 1)[0]
 
     def optimize_agent(self, sample, time_step):

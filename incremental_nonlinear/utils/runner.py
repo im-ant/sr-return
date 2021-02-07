@@ -156,22 +156,22 @@ class BaseRunner(object):
         """
         return (torch.tensor(s, device=self.device).permute(2, 0, 1)).unsqueeze(0).float()
 
-    def world_dynamics(self, s, env, algo):
+    def world_dynamics(self, s, env, algo, total_steps):
         # network(s)[0] specifies the policy network, which we use to draw an action according to a multinomial
         # distribution over axis 1, (axis 0 iterates over samples, and is unused in this case. torch._no_grad()
         # avoids tracking history in autograd.
         with torch.no_grad():
-            action = algo.get_action(s)
-            # TODO: device?
+            action = algo.get_action(s, total_steps).to(self.device)
 
         # Act according to the action and observe the transition and reward
         reward, terminated = env.act(action)
+        reward = torch.tensor([[reward]], device=self.device).float()
+        terminated = torch.tensor([[terminated]], device=self.device)
 
         # Obtain s_prime
         s_prime = self.get_state(env.state())
 
-        return s_prime, action, torch.tensor([[reward]], device=self.device).float(), torch.tensor([[terminated]],
-                                                                                                   device=self.device)
+        return s_prime, action, reward, terminated
 
     def one_training_step(self, sample, total_steps):
         """
@@ -219,7 +219,9 @@ class BaseRunner(object):
 
             while (not is_terminated) and total_steps < n_steps:
                 # Generate data
-                s_prime, action, reward, is_terminated = self.world_dynamics(s, env, algo)
+                s_prime, action, reward, is_terminated = self.world_dynamics(
+                    s, env, algo, total_steps,
+                )
                 # sample = TransitionTuple(s, s_last, action, r_last, term_last)  # TODO delete after this
                 sample = TransitionTuple(s, s_prime, action, reward, is_terminated)
 
