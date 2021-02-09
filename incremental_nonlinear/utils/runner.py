@@ -222,6 +222,7 @@ class BaseRunner(object):
                 s_prime, action, reward, is_terminated = self.world_dynamics(
                     s, env, algo, total_steps,
                 )
+
                 # sample = TransitionTuple(s, s_last, action, r_last, term_last)  # TODO delete after this
                 sample = TransitionTuple(s, s_prime, action, reward, is_terminated)
 
@@ -375,6 +376,7 @@ class BatchedOfflineRunner(BaseRunner):
                  batch_size=32,
                  replay_start_buffer_size=5000,
                  train_every_n_frames=1,
+                 train_iterations=1,
                  log_interval_episodes=10,
                  log_dir_path=None,
                  store_checkpoint=False,
@@ -399,6 +401,7 @@ class BatchedOfflineRunner(BaseRunner):
         self.replay_start_buffer_size = replay_start_buffer_size
         self.batch_size = batch_size
         self.train_every_n_frames = train_every_n_frames
+        self.train_iterations = train_iterations
 
     def one_training_step(self, sample, total_steps):
         # ==
@@ -413,10 +416,13 @@ class BatchedOfflineRunner(BaseRunner):
             cur_buffer_size = self.replay_buffer.get_size()
             if ((cur_buffer_size > self.replay_start_buffer_size)
                     and (cur_buffer_size > self.batch_size)):
-                sample_batch = self.replay_buffer.sample(self.batch_size)  # (batch_n, tuple)
-                batch_sample = TransitionTuple(
-                    *[torch.cat(e) for e in zip(*sample_batch)]
-                )  # (tuple key: torch.tensor of (batch_n, *)
+                for _ in range(self.train_iterations):
+                    sample_batch = self.replay_buffer.sample(
+                        self.batch_size
+                    )  # (batch_n, tuple)
+                    batch_sample = TransitionTuple(
+                        *[torch.cat(e) for e in zip(*sample_batch)]
+                    )  # (tuple key: torch.tensor of (batch_n, *)
 
             # ==
             # Train
