@@ -1,4 +1,5 @@
 defaults:
+  - runner: incremental_online
   - algo: ac_lambda
   - model: ac_network
 training:

@@ -1,0 +1,9 @@
+# @package _group_
+cls_string: 'BatchedOfflineRunner'
+kwargs:
+  train_every_n_frames: 1  # default: 1
+  train_iterations: 1  # default: 1
+  batch_size: 32  # default: 32
+  replay_start_buffer_size: 5000  # default: 5000
+buffer_kwargs:
+  buffer_size: 100000  # default: 100,000

@@ -26,7 +26,8 @@ class ACLambda:
                  entropy_beta=0.01,
                  grad_rms_gamma=0.999,
                  grad_rms_eps=0.0001,
-                 min_denom=0.0001
+                 min_denom=0.0001,
+                 seed=None,  # dummy
                  ):
         # TODO: input everything as argument
 
@@ -99,53 +100,64 @@ class ACLambda:
         print('self.params_lr_dict', self.params_lr_dict)
         print(self.model)  # TODO delete this and above?
 
+    def episode_reset(self):
+        self.clear_eligibility_traces()
+
+    def get_action(self, state, total_steps):
+        return torch.multinomial(self.model(state)[0], 1)[0]
+
     def optimize_agent(self, sample, time_step):
 
-        # states, next_states: (1, in_channel, 10, 10) - inline with pytorch NCHW format
-        # actions, rewards, is_terminal: (1, 1)
-        last_state = sample.last_state
-        state = sample.state
-        action = sample.action
-        reward = sample.reward
-        is_terminal = sample.is_terminal
+        # ==
+        # Unpack sample
+        state = sample.state  # (batch_n=1, channel, height, width)
+        next_state = sample.next_state  # (batch_n, c, h w)
+        action = sample.action  # (batch_n=1, 1)
+        reward = sample.reward  # (batch_n=1, 1)
+        is_terminal = sample.is_terminal  # (batch_n=1, 1)
 
         pi, V_curr = self.model(state)
 
-        # Compute targets
+        # ==
+        # Compute eligibility trace
         trace_potential = V_curr + 0.5 * torch.log(pi[0, action] + self.min_denom)
-        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
+        # TODO: add sum for batch dim?
 
-        # Gradients to be combined with elig traces
+        # Save gradients for trace parameters
         self.model.zero_grad()
         trace_potential.backward(retain_graph=True)
         self.store_current_trace_grads()
 
-        # Update parameters except for on the first observation
-        if last_state is not None:
-            non_trace_loss = - self.entropy_beta * entropy
-            self.model.zero_grad()
-            non_trace_loss.backward()
-
-            with torch.no_grad():
-                # TD error
-                V_last = self.model(last_state)[1]
-                delta = (self.discount_gamma * (0 if is_terminal else V_curr)
-                         + reward - V_last)
-
-                # Update
-                self.parameter_step(delta, time_step)
-
-        # Accumulating trace (Always update trace)
+        # Accumulating trace with stored gradients
         self.accumulate_eligibility_traces()
+
+        # ==
+        # Compute additional losses
+        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
+        non_trace_loss = - self.entropy_beta * entropy
+        # TODO: use a sum for batch dim?
+
+        self.model.zero_grad()
+        non_trace_loss.backward()
+
+        # ==
+        # Update parameters
+        with torch.no_grad():
+            # TD error
+            V_next = self.model(next_state)[1]
+            delta = (self.discount_gamma * (0 if is_terminal else V_next)
+                     + reward - V_curr)
+
+            # Update
+            self.parameter_step(delta, time_step)
 
         # ==
         # Construct dict
         out_dict = None
         # TODO log the average trace magnitude?
-        if last_state is not None:
-            out_dict = {
-                'value_loss': delta.item() ** 2,
-            }
+        out_dict = {
+            'value_loss': delta.item() ** 2,
+        }
 
         return out_dict
 
@@ -221,6 +233,82 @@ class ACLambda:
         """
         for name in self.traces:
             self.traces[name].zero_()
+
+
+class ACLambdaOld(ACLambda):
+    """
+    Old reference code
+    """
+
+    def __init__(self, ModelCls, model_kwargs,
+                 discount_gamma=0.99,
+                 lr_alpha=0.00048828125,
+                 trace_lambda=0.8,
+                 entropy_beta=0.01,
+                 grad_rms_gamma=0.999,
+                 grad_rms_eps=0.0001,
+                 min_denom=0.0001
+                 ):
+        super().__init__(
+            ModelCls, model_kwargs,
+            discount_gamma=discount_gamma,
+            lr_alpha=lr_alpha,
+            trace_lambda=trace_lambda,
+            entropy_beta=entropy_beta,
+            grad_rms_gamma=grad_rms_gamma,
+            grad_rms_eps=grad_rms_eps,
+            min_denom=min_denom
+        )
+
+    def optimize_agent(self, sample, time_step):
+
+        # states, next_states: (1, in_channel, 10, 10) - inline with pytorch NCHW format
+        # actions, rewards, is_terminal: (1, 1)
+        last_state = sample.last_state
+        state = sample.state
+        action = sample.action
+        reward = sample.reward
+        is_terminal = sample.is_terminal
+
+        pi, V_curr = self.model(state)
+
+        # Compute targets
+        trace_potential = V_curr + 0.5 * torch.log(pi[0, action] + self.min_denom)
+        entropy = -torch.sum(torch.log(pi + self.min_denom) * pi)
+
+        # Gradients to be combined with elig traces
+        self.model.zero_grad()
+        trace_potential.backward(retain_graph=True)
+        self.store_current_trace_grads()
+
+        # Update parameters except for on the first observation
+        if last_state is not None:
+            non_trace_loss = - self.entropy_beta * entropy
+            self.model.zero_grad()
+            non_trace_loss.backward()
+
+            with torch.no_grad():
+                # TD error
+                V_last = self.model(last_state)[1]
+                delta = (self.discount_gamma * (0 if is_terminal else V_curr)
+                         + reward - V_last)
+
+                # Update
+                self.parameter_step(delta, time_step)
+
+        # Accumulating trace (Always update trace)
+        self.accumulate_eligibility_traces()
+
+        # ==
+        # Construct dict
+        out_dict = None
+        # TODO log the average trace magnitude?
+        if last_state is not None:
+            out_dict = {
+                'value_loss': delta.item() ** 2,
+            }
+
+        return out_dict
 
 
 if __name__ == '__main__':
