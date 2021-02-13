@@ -21,6 +21,7 @@ class LehnertGridWorldEnv(gym.Env):
                  width=5,
                  slip_prob=0.05,
                  episode_max_length=200,
+                 start_switch_freq=None,
                  goal_switch_freq=None,
                  seed=0):
         """
@@ -47,24 +48,23 @@ class LehnertGridWorldEnv(gym.Env):
         self.rng = np.random.default_rng(seed)
 
         # ==
-        # Goal
+        # Starting and goal states
+        self.starts = [
+            (self.width-1, cIdx) for cIdx in reversed(range(self.width))
+        ]  # from bottom right to left
         self.goals = [
-            (0, self.width - 1),  # top right
-            (0, self.width - 2),
-            (0, self.width - 3),
-            (0, self.width - 4),
-            (0, self.width - 5),
-            (0, self.width - 4),
-            (0, self.width - 3),
-            (0, self.width - 2),
-        ]
+            (0, cIdx) for cIdx in reversed(range(self.width))
+        ]  # from top right to left
+        self.start_switch_freq = start_switch_freq
         self.goal_switch_freq = goal_switch_freq
 
         # ==
         # States
-        self.state = (self.width - 1, self.width - 1)  # bottom right
+        self.start_idx = 0  # current start state index
         self.goal_idx = 0  # current goal index
         self.total_episode_count = 0  # count total num episodes resets
+
+        self.state = self.starts[self.start_idx]
         self.current_episode_steps = 0
 
     def tup2idx(self, tup):
@@ -81,8 +81,14 @@ class LehnertGridWorldEnv(gym.Env):
                 num_goals = len(self.goals)
                 self.goal_idx = (self.goal_idx + 1) % num_goals
 
+        # Set start
+        if self.start_switch_freq is not None:
+            if self.total_episode_count % self.start_switch_freq == 0:
+                num_starts = len(self.starts)
+                self.start_idx = (self.start_idx + 1) % num_starts
+
         # Set current episode
-        self.state = (self.width - 1, self.width - 1)  # bottom right
+        self.state = self.starts[self.start_idx]
         self.current_episode_steps = 0
         phi = self.state_2_features(self.state)
         return phi

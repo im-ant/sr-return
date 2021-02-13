@@ -4,4 +4,5 @@ kwargs:
   width: 10
   slip_prob: 0.05
   episode_max_length: 200
+  start_switch_freq: null
   goal_switch_freq: null
