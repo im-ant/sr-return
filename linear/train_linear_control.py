@@ -19,6 +19,7 @@ from omegaconf import DictConfig, OmegaConf
 import numpy as np
 
 from algos.q_learning import QAgent
+from algos.sf_q_learning import LambdaSFQAgent
 from envs.lehnert_grid import LehnertGridWorldEnv
 import utils.mdp_utils as mut
 
