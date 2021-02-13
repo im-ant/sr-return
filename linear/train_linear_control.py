@@ -213,6 +213,38 @@ def write_post_episode_log(cfg: DictConfig,
             print(log_str)
 
 
+def post_episode_updates(cfg: DictConfig, episode_idx: int,
+                         agent, environment) -> None:
+    """
+    Post-episode manipulations
+    :param cfg:
+    :param episode_idx:
+    :param agent:
+    :param environment:
+    :return:
+    """
+    # ==
+    # Reset parameters
+    if cfg.training.param_reset.freq is not None:
+        if (episode_idx + 1) % cfg.training.param_reset.freq == 0:
+            # Get attributes
+            attr_str_list = cfg.training.param_reset.attr_strs.split(';')
+
+            # Optionally reset reward parameters
+            if 'Wr' in attr_str_list:
+                agent.Wr = agent.rng.uniform(
+                    0.0, 1e-5, size=agent.feature_dim
+                )
+
+            # Optionally reset SF parameters
+            if 'Ws' in attr_str_list:
+                agent.Ws = np.zeros(
+                    (agent.num_actions, agent.feature_dim, agent.feature_dim)
+                )
+                ws_idxs = np.arange(agent.feature_dim)
+                agent.Ws[:, ws_idxs, ws_idxs] = 1.0
+
+
 def run_single_linear_experiment(cfg: DictConfig,
                                  logger=None):
     # ==================================================
@@ -258,6 +290,13 @@ def run_single_linear_experiment(cfg: DictConfig,
                                        environment=environment,
                                        agent=agent,
                                        logger=logger)
+
+                # ==
+                # (Potential resets)
+                post_episode_updates(cfg=cfg,
+                                     episode_idx=episode_idx,
+                                     agent=agent,
+                                     environment=environment)
 
                 # ==
                 # Terminate
@@ -361,7 +400,7 @@ def run_experiments(cfg: DictConfig, logger=None):
         run_single_linear_experiment(cur_cfg, logger)
 
 
-@hydra.main(config_path="conf", config_name="config")
+@hydra.main(config_path="conf", config_name="config_control")
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))  # print the configs
 

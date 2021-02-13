@@ -1,0 +1,22 @@
+defaults:
+  - agent: q_learning
+  - env: lehnert_grid
+  - hydra/job_logging: disabled
+
+training:
+  num_episodes: 20
+  seed: 0
+  save_checkpoint: null
+  param_reset:
+    freq: null
+    attr_strs: 'Wr'  # ';'-separated string
+
+logging:
+  dir_path: './'
+  print_freq: 100
+
+env: {}
+
+agent:
+  kwargs:
+    gamma: 0.9
