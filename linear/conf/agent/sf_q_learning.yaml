@@ -1,0 +1,12 @@
+# @package _group_
+cls_string: "LambdaSFQAgent"
+kwargs:
+  gamma: 0.9
+  lamb: 0.0
+  eta_trace: 0.0
+  lr: 0.1
+  reward_lr: null
+  sf_lr: null
+  policy_epsilon: 0.3
+  optim_kwargs:
+    smoothing_alpha: 0.99

@@ -20,6 +20,8 @@ class SFReturnAgent(BaseLinearAgent):
                  lamb=0.8,
                  eta_trace=0.0,
                  lr=0.1,
+                 reward_lr=None,
+                 sf_lr=None,
                  use_true_reward_params=False,
                  use_true_sf_params=False,
                  seed=0):
@@ -36,9 +38,9 @@ class SFReturnAgent(BaseLinearAgent):
 
         self.lamb = lamb
         self.eta_trace = eta_trace  # value fn bwd trace
-        self.reward_lr = lr  # different learning rates?
         self.value_lr = lr
-        self.sf_lr = lr
+        self.reward_lr = lr if reward_lr is None else reward_lr
+        self.sf_lr = lr if sf_lr is None else sf_lr
 
         # Weights
         self.Wr = np.zeros(self.feature_dim)

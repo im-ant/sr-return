@@ -10,6 +10,7 @@ import dataclasses
 from itertools import product
 import json
 import logging
+import numbers
 import os
 import uuid
 
@@ -18,15 +19,9 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 import numpy as np
 
-from algos.sf_return_ag import SFReturnAgent
-from algos.td_lambda_ag import SarsaLambdaAgent
-from algos.expt_trace_ag import ExpectedTraceAgent
-from envs.bipolar_chain import BipolarChainEnv
-from envs.boyans_chain import BoyansChainEnv
-from envs.random_walk_chain import RandomWalkChainEnv
-from envs.perf_bin_tree import PerfBinaryTreeEnv
-from envs.fan_in_bin_tree import FanInBinaryTreeEnv
-from envs.linear_chain import SimpleLinearChainEnv
+from algos.q_learning import QAgent
+from algos.sf_q_learning import LambdaSFQAgent
+from envs.lehnert_grid import LehnertGridWorldEnv
 import utils.mdp_utils as mut
 
 
@@ -40,9 +35,11 @@ class LogTupStruct:
     gamma: float = None
     lr: float = None
     sf_lr: float = None
+    optim_kwargs: str = None
     reward_lr: float = None
     lamb: float = None
     eta_trace: float = None
+    policy_epsilon: float = None
     use_true_reward_params: bool = None
     use_true_sf_params: bool = None
     episode_idx: int = None  # episodic-specific logs
@@ -113,54 +110,17 @@ def _initialize_agent(cfg: DictConfig, environment) -> object:
     # ==
     # (Optional) Initialize true reward and SF functions
 
-    # Initialize solved SF parameters
-    if hasattr(cfg.agent.kwargs, 'use_true_sf_params'):
-        if cfg.agent.kwargs.use_true_sf_params:
-            linear_sf_param = mut.solve_linear_sf_param(
-                env=environment,
-                gamma=(cfg.agent.kwargs.gamma * cfg.agent.kwargs.lamb)
-            )
-            agent.Ws[0] = linear_sf_param
     # Initialize solved reward parameters
+    """ TODO fix
     if hasattr(cfg.agent.kwargs, 'use_true_reward_params'):
         if cfg.agent.kwargs.use_true_reward_params:
             linear_reward_param = mut.solve_linear_reward_param(
                 env=environment,
             )
             agent.Wr = linear_reward_param
+    """
 
     return agent
-
-
-def _pre_compute(cfg: DictConfig, environment, agent) -> dict:
-    """
-    Pre-compute things before training begins, largely used to solve for the
-    true value function to measure RMSE.
-
-    :param cfg: config dict
-    :param environment: enviornment object
-    :param agent: agent object
-    :return: dict of pre-computed items
-    """
-    # Compute the true MDP value function
-    true_v_fn = mut.solve_value_fn(environment,
-                                   cfg.agent.kwargs.gamma)
-
-    # Compute the true MDP successor feature
-    true_sf_mat = mut.solve_successor_feature(
-        environment,
-        (cfg.agent.kwargs.gamma * cfg.agent.kwargs.lamb)
-    )
-
-    true_reward_vec = environment.get_reward_function()
-
-    out_dict = {
-        'true_value_vec': true_v_fn,
-        'true_sf_mat': true_sf_mat,
-        'true_reward_vec': true_reward_vec,
-    }
-
-    return out_dict
 
 
 def _extract_agent_log_dict(agent):
@@ -212,7 +172,6 @@ def _extract_agent_log_dict(agent):
 
 
 def write_post_episode_log(cfg: DictConfig,
-                           pre_comput_dict: dict,
                            episode_dict: dict,
                            environment, agent,
                            logger) -> None:
@@ -227,30 +186,10 @@ def write_post_episode_log(cfg: DictConfig,
 
     # Assume all agent kwargs are available in log
     for k in cfg.agent.kwargs:
-        log_dict[k] = cfg.agent.kwargs[k]
-
-    # ==
-    # Learning RMSEs
-
-    # For the value function
-    log_dict['v_fn_rmse'] = mut.evaluate_value_rmse(
-        environment, agent, pre_comput_dict['true_value_vec']
-    )
-
-    # (Optional) for SF matrix (NOTE: hard-coded)
-    if cfg.agent.cls_string == 'SFReturnAgent':
-        # For LSF value function
-        log_dict['sf_G_rmse'] = mut.evaluate_sf_ret_rmse(
-            environment, agent, pre_comput_dict['true_value_vec']
-        )
-
-        log_dict['sf_matrix_rmse'] = mut.evaluate_sf_mat_rmse(
-            environment, agent, pre_comput_dict['true_sf_mat']
-        )
-
-        log_dict['reward_vec_rmse'] = mut.evaluate_reward_rmse(
-            environment, agent, pre_comput_dict['true_reward_vec']
-        )
+        if isinstance(cfg.agent.kwargs[k], numbers.Number):
+            log_dict[k] = cfg.agent.kwargs[k]
+        else:
+            log_dict[k] = str(cfg.agent.kwargs[k])
 
     # ==
     # episode-specific logs
@@ -279,6 +218,38 @@ def write_post_episode_log(cfg: DictConfig,
             print(log_str)
 
 
+def post_episode_updates(cfg: DictConfig, episode_idx: int,
+                         agent, environment) -> None:
+    """
+    Post-episode manipulations
+    :param cfg:
+    :param episode_idx:
+    :param agent:
+    :param environment:
+    :return:
+    """
+    # ==
+    # Reset parameters
+    if cfg.training.param_reset.freq is not None:
+        if (episode_idx + 1) % cfg.training.param_reset.freq == 0:
+            # Get attributes
+            attr_str_list = cfg.training.param_reset.attr_strs.split(';')
+
+            # Optionally reset reward parameters
+            if 'Wr' in attr_str_list:
+                agent.Wr = agent.rng.uniform(
+                    0.0, 1e-5, size=agent.feature_dim
+                )
+
+            # Optionally reset SF parameters
+            if 'Ws' in attr_str_list:
+                agent.Ws = np.zeros(
+                    (agent.num_actions, agent.feature_dim, agent.feature_dim)
+                )
+                ws_idxs = np.arange(agent.feature_dim)
+                agent.Ws[:, ws_idxs, ws_idxs] = 1.0
+
+
 def run_single_linear_experiment(cfg: DictConfig,
                                  logger=None):
     # ==================================================
@@ -288,10 +259,6 @@ def run_single_linear_experiment(cfg: DictConfig,
     # ==================================================
     # Initialize agent
     agent = _initialize_agent(cfg, environment)
-
-    # ==================================================
-    # Pre-compute items like the true value
-    pre_comput_dict = _pre_compute(cfg, environment, agent)
 
     # ==================================================
     # Run experiment
@@ -309,6 +276,8 @@ def run_single_linear_experiment(cfg: DictConfig,
             obs, reward, done, info = environment.step(action)
             action = agent.step(obs, reward, done)
 
+            # print(f'state: {environment.state}, r: {reward}, done: {done}, a: {action}')  # TODO DELETE
+
             # Tracker variables
             cumulative_reward += reward
             steps += 1
@@ -322,11 +291,17 @@ def run_single_linear_experiment(cfg: DictConfig,
                     'cumulative_reward': cumulative_reward,
                 }
                 write_post_episode_log(cfg=cfg,
-                                       pre_comput_dict=pre_comput_dict,
                                        episode_dict=post_epis_dict,
                                        environment=environment,
                                        agent=agent,
                                        logger=logger)
+
+                # ==
+                # (Potential resets)
+                post_episode_updates(cfg=cfg,
+                                     episode_idx=episode_idx,
+                                     agent=agent,
+                                     environment=environment)
 
                 # ==
                 # Terminate
@@ -430,7 +405,7 @@ def run_experiments(cfg: DictConfig, logger=None):
         run_single_linear_experiment(cur_cfg, logger)
 
 
-@hydra.main(config_path="conf", config_name="config")
+@hydra.main(config_path="conf", config_name="config_control")
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))  # print the configs
 

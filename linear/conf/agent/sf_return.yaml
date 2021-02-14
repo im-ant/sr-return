@@ -3,5 +3,8 @@ cls_string: "SFReturnAgent"
 kwargs:
   lamb: 0.8  # discount for SF
   eta_trace: 0.0  # trace decay
+  lr: 0.1
+  reward_lr: null
+  sf_lr: null
   use_true_reward_params: False
   use_true_sf_params: False
