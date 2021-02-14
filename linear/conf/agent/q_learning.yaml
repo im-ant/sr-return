@@ -5,3 +5,5 @@ kwargs:
   lr: 0.1
   lamb: 0.0
   policy_epsilon: 0.3
+  optim_kwargs:
+    smoothing_alpha: 0.99

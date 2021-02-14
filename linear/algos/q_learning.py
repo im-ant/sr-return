@@ -10,6 +10,7 @@ from gym import spaces
 import numpy as np
 
 from algos.base import BaseLinearAgent
+from utils.optim import RMSProp
 
 
 class QAgent(BaseLinearAgent):
@@ -19,6 +20,7 @@ class QAgent(BaseLinearAgent):
                  lamb=0.0,
                  lr=0.1,
                  policy_epsilon=0.3,
+                 optim_kwargs=None,
                  seed=0):
 
         """
@@ -29,13 +31,18 @@ class QAgent(BaseLinearAgent):
 
         self.policy_epsilon = policy_epsilon
 
-        # Initialize Q function and trace
-        # self.Wq = np.zeros((self.feature_dim, self.num_actions))  # TODO check correct
+        # ==
+        # Initialize Q function parameter and optimizer
         self.Wq = self.rng.uniform(
             low=0.0, high=1e-5,
             size=(self.feature_dim, self.num_actions)
-        )  # TODO delete? or use this?
-        self.Z = np.zeros((self.feature_dim, self.num_actions))  # TODO implement?
+        )
+        optim_kwargs = {} if optim_kwargs is None else optim_kwargs
+        self.Wq_optim = RMSProp(self.Wq, lr=lr, **optim_kwargs)
+
+        # ==
+        # Initialize trace (TODO implement and check validity?)
+        self.Z = np.zeros((self.feature_dim, self.num_actions))
 
     def begin_episode(self, phi):
         action = super().begin_episode(phi)
@@ -102,7 +109,8 @@ class QAgent(BaseLinearAgent):
 
         # Parameter updates
         del_Wq = td_err * self.Z
-        self.Wq = self.Wq + (self.lr * del_Wq)
+        ada_del_Wq = self.Wq_optim.step(del_Wq)
+        self.Wq = self.Wq + ada_del_Wq
 
         # ==
         # Logging losses
