@@ -11,6 +11,7 @@ from gym import spaces
 import numpy as np
 
 from algos.base import BaseLinearAgent
+from utils.optim import RMSProp
 
 
 class LambdaSFQAgent(BaseLinearAgent):
@@ -23,6 +24,7 @@ class LambdaSFQAgent(BaseLinearAgent):
                  reward_lr=None,
                  sf_lr=None,
                  policy_epsilon=0.3,
+                 optim_kwargs=None,
                  seed=0):
         """
         TODO define arguments
@@ -44,24 +46,35 @@ class LambdaSFQAgent(BaseLinearAgent):
         self.reward_lr = lr if reward_lr is None else reward_lr
         self.sf_lr = lr if sf_lr is None else sf_lr
 
-        # Initialize weights
+        # ==
+        # Initialize parameters
+        optim_kwargs = {} if optim_kwargs is None else optim_kwargs
+
+        # Reward parameters
         self.Wr = self.rng.uniform(0.0, 1e-5,
                                    size=self.feature_dim)
+        self.Wr_optim = RMSProp(self.Wr, lr=self.reward_lr, **optim_kwargs)
+
+        # SF parameters
         self.Ws = np.zeros(
             (self.num_actions, self.feature_dim, self.feature_dim)
         )  # |A| * d * D
+        ws_idxs = np.arange(self.feature_dim)
+        self.Ws[:, ws_idxs, ws_idxs] = 1.0  # identity initialization
+        self.Ws_optim = RMSProp(self.Ws, lr=self.sf_lr, **optim_kwargs)
+
+        # Value parameters
         self.Wq = self.rng.uniform(
             0.0, 1e-5,
             size=(self.num_actions, self.feature_dim)
         )
+        self.Wq_optim = RMSProp(self.Wq, lr=self.value_lr, **optim_kwargs)
 
+
+
+        # ==
         # Trace  # TODO not tested for validity
         self.Zq = np.zeros((self.num_actions, self.feature_dim))
-
-        # Initialize the SF weights to identity for each action,
-        # corresponding to the learned weights for self.lamb = 0
-        ws_idxs = np.arange(self.feature_dim)
-        self.Ws[:, ws_idxs, ws_idxs] = 1.0
 
     def begin_episode(self, phi):
         action = super().begin_episode(phi)
@@ -111,7 +124,8 @@ class LambdaSFQAgent(BaseLinearAgent):
         # Update reward function
         rew_err = cur_rew - np.dot(cur_phi, self.Wr)
         d_Wr = rew_err * cur_phi
-        self.Wr = self.Wr + (self.reward_lr * d_Wr)
+        ada_d_Wr = self.Wr_optim.step(d_Wr)
+        self.Wr = self.Wr + ada_d_Wr
 
         # (Log) Reward error
         self.log_dict['reward_errors'].append(d_Wr)
@@ -136,9 +150,11 @@ class LambdaSFQAgent(BaseLinearAgent):
         sf_td_err = cur_phi + (self.lamb * self.gamma * nex_sf) - cur_sf  # (d, )
         d_Ws = np.transpose(np.outer(sf_td_err, cur_phi))
 
-        # Update
-        self.Ws[cur_act] += self.sf_lr * d_Ws
-        # NOTE future: can use soft actions
+        # Update  NOTE future: can use soft actions?
+        del_Ws = np.zeros_like(self.Ws)
+        del_Ws[cur_act] = d_Ws
+        ada_del_Ws = self.Ws_optim.step(del_Ws)
+        self.Ws = self.Ws + ada_del_Ws
 
         # (Log) Norm of the SF error vector
         self.log_dict['sf_error_norms'].append(
@@ -177,7 +193,8 @@ class LambdaSFQAgent(BaseLinearAgent):
 
         # Parameter updates
         del_Wq = td_err * self.Zq  # (num_actions, feature_dim)
-        self.Wq = self.Wq + (self.lr * del_Wq)
+        ada_del_Wq = self.Wq_optim.step(del_Wq)
+        self.Wq = self.Wq + ada_del_Wq
 
         # (Log) Value function error
         self.log_dict['value_errors'].append(td_err)

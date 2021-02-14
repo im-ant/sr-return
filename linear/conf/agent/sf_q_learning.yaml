@@ -8,3 +8,5 @@ kwargs:
   reward_lr: null
   sf_lr: null
   policy_epsilon: 0.3
+  optim_kwargs:
+    smoothing_alpha: 0.99
