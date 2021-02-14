@@ -10,6 +10,7 @@ import dataclasses
 from itertools import product
 import json
 import logging
+import numbers
 import os
 import uuid
 
@@ -34,6 +35,7 @@ class LogTupStruct:
     gamma: float = None
     lr: float = None
     sf_lr: float = None
+    optim_kwargs: str = None
     reward_lr: float = None
     lamb: float = None
     eta_trace: float = None
@@ -184,7 +186,10 @@ def write_post_episode_log(cfg: DictConfig,
 
     # Assume all agent kwargs are available in log
     for k in cfg.agent.kwargs:
-        log_dict[k] = cfg.agent.kwargs[k]
+        if isinstance(cfg.agent.kwargs[k], numbers.Number):
+            log_dict[k] = cfg.agent.kwargs[k]
+        else:
+            log_dict[k] = str(cfg.agent.kwargs[k])
 
     # ==
     # episode-specific logs
