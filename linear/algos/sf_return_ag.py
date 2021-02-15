@@ -115,7 +115,7 @@ class SFReturnAgent(BaseLinearAgent):
         self.Wr = self.Wr + (self.reward_lr * d_Wr)
 
         # (Log) Reward error
-        self.log_dict['reward_errors'].append(d_Wr)
+        self.log_dict['reward_errors'].append(rew_err)
 
     def _optimize_successor_features(self, done) -> None:
         # Get current experience tuple (S, A)
@@ -173,7 +173,8 @@ class SFReturnAgent(BaseLinearAgent):
         # ==
         # TD learning using the SLR value
         cur_v = cur_phi.T @ self.Wv
-        v_td_err = nex_rew + (self.gamma * slr_V) - cur_v
+        v_target = nex_rew + (self.gamma * slr_V)
+        v_td_err = v_target - cur_v
         del_Wv = v_td_err * self.Zv
 
         # Update
