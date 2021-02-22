@@ -16,7 +16,8 @@ from utils.optim import RMSProp
 
 LogTupStruct = namedtuple(
     'LogTupStruct',
-    field_names=['lamb', 'lr', 'policy_epsilon', 'optim_kwargs',
+    field_names=['lamb', 'eta_trace', 'lr', 'reward_lr', 'sf_lr',
+                 'policy_epsilon', 'use_lambda_q_control', 'optim_kwargs',
                  'value_loss_avg', 'sf_loss_avg', 'reward_loss_avg']
 )
 
@@ -31,6 +32,7 @@ class LambdaSFQAgent(BaseLinearAgent):
                  reward_lr=None,
                  sf_lr=None,
                  policy_epsilon=0.3,
+                 use_lambda_q_control=False,
                  optim_kwargs=None,
                  seed=0):
         """
@@ -48,6 +50,7 @@ class LambdaSFQAgent(BaseLinearAgent):
         self.lamb = lamb
         self.eta_trace = eta_trace  # value fn bwd trace
         self.policy_epsilon = policy_epsilon
+        self.use_lambda_q_control = use_lambda_q_control
 
         self.value_lr = lr
         self.reward_lr = lr if reward_lr is None else reward_lr
@@ -76,8 +79,6 @@ class LambdaSFQAgent(BaseLinearAgent):
             size=(self.num_actions, self.feature_dim)
         )
         self.Wq_optim = RMSProp(self.Wq, lr=self.value_lr, **optim_kwargs)
-
-
 
         # ==
         # Trace  # TODO not tested for validity
@@ -225,7 +226,7 @@ class LambdaSFQAgent(BaseLinearAgent):
         sf_theta = np.sum((sf * self.Wq), axis=1)  # (num_actions, )
         sf_w = np.matmul(sf, self.Wr)  # (num_actions, )
 
-        q_vec = (1-self.lamb) * sf_theta + (self.lamb * sf_w)
+        q_vec = (1 - self.lamb) * sf_theta + (self.lamb * sf_w)
 
         return q_vec
 
@@ -242,7 +243,10 @@ class LambdaSFQAgent(BaseLinearAgent):
             action = self.rng.choice(self.num_actions)
         # Greedy action
         else:
-            q_vec = self.Wq @ phi  # (n_actions, )
+            if self.use_lambda_q_control:
+                q_vec = self.compute_lambda_Q_function(phi)
+            else:
+                q_vec = self.Wq @ phi  # (n_actions, )
             action = np.argmax(q_vec)
 
         return action
