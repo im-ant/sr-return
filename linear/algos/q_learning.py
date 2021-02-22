@@ -4,13 +4,20 @@
 # Author: Anthony G. Chen
 # =============================================================================
 
+from collections import namedtuple
 from typing import List, Tuple
 
 from gym import spaces
 import numpy as np
 
 from algos.base import BaseLinearAgent
-from utils.optim import RMSProp
+from utils.optim import *
+
+LogTupStruct = namedtuple(
+    'LogTupStruct',
+    field_names=['lamb', 'lr', 'policy_epsilon', 'optim',
+                 'value_loss_avg']
+)
 
 
 class QAgent(BaseLinearAgent):
@@ -20,7 +27,7 @@ class QAgent(BaseLinearAgent):
                  lamb=0.0,
                  lr=0.1,
                  policy_epsilon=0.3,
-                 optim_kwargs=None,
+                 optim=None,
                  seed=0):
 
         """
@@ -33,16 +40,23 @@ class QAgent(BaseLinearAgent):
 
         # ==
         # Initialize Q function parameter and optimizer
+        optim_cls = globals()[optim['cls_string']]
+        optim_kwargs = {} if optim['kwargs'] is None else optim['kwargs']
+
+        # Parameters
         self.Wq = self.rng.uniform(
             low=0.0, high=1e-5,
             size=(self.feature_dim, self.num_actions)
         )
-        optim_kwargs = {} if optim_kwargs is None else optim_kwargs
-        self.Wq_optim = RMSProp(self.Wq, lr=lr, **optim_kwargs)
+        self.Wq_optim = optim_cls(self.Wq, lr=lr, **optim_kwargs)
 
         # ==
         # Initialize trace (TODO implement and check validity?)
         self.Z = np.zeros((self.feature_dim, self.num_actions))
+
+        # ==
+        # For logging
+        self.logTupStruct = LogTupStruct
 
     def begin_episode(self, phi):
         action = super().begin_episode(phi)

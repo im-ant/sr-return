@@ -8,5 +8,7 @@ kwargs:
   reward_lr: null
   sf_lr: null
   policy_epsilon: 0.3
-  optim_kwargs:
-    smoothing_alpha: 0.99
+  use_lambda_q_control: False
+  optim:
+    cls_string: 'SGD'
+    kwargs: null

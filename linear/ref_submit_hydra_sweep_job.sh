@@ -7,7 +7,7 @@ set -e
 
 
 # Experiment name (for the submission only)
-job_name="hydra_sweep"
+job_name="fanin_linear_hydra"
 
 # Error file output parent directory
 stdout_dir="/network/tmp1/chenant/ant/sr_trace/stdout_error"
@@ -16,7 +16,7 @@ stdout_dir="/network/tmp1/chenant/ant/sr_trace/stdout_error"
 job_file="/home/mila/c/chenant/repos/sr-return/linear/arg-job_train_hydra.script"
 
 # Job partition (same for all jobs)
-partition_per_job="main,long"
+partition_per_job="long"
 
 # Job resource (same for all jobs)
 # pascal: [titanx, titanxp]; turing: [titanrtx, rtx8000];
@@ -30,7 +30,7 @@ cpu_per_task="1"
 mem_per_job="12G"
 
 # Specify time need (same for all jobs)
-time_per_job="48:00:00"
+time_per_job="24:00:00"
 
 
 

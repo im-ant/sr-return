@@ -7,7 +7,10 @@
 # ============================================================================
 
 # Format for where to put the parameter sweep outputs
-sweep_parent_dir='/network/tmp1/chenant/ant/sr_trace/${now:%Y-%m-%d}/${now:%H-%M-%S}'
+# sweep_parent_dir='/network/tmp1/chenant/ant/sr_trace/${now:%Y-%m-%d}/${now:%H-%M-%S}'
+
+# Seed variable
+SEEDS=$seeds
 
 # ===========================
 # Experimental set-up
@@ -20,28 +23,35 @@ module load python/3.7/cuda/10.1/cudnn/7.6/pytorch/1.5.0
 source $HOME/venvs/rlpyt/bin/activate
 
 # (2) no data to copy
-
 # (3) launch job with parameter sweeps
-#python -u train_linear_prediction.py --multirun \
+base_dir='/miniscratch/chenant/ant/sr_return/2021-02-22/11-50-00_leh/${now:%H-%M-%S}'
+add_name="_s$SEEDS"
+sweep_parent_dir=$base_dir$add_name
 
-python -u train_linear_prediction.py \
+python -u train_linear_control.py \
     hydra.run.dir=$sweep_parent_dir \
     hydra.sweep.dir=$sweep_parent_dir \
-    training.num_episodes=400 \
+    training.num_episodes=4000 \
     training.save_checkpoint=null \
-    training.seed=[2,4,6,8,10] \
-    env=fan_in_bin_tree \
-    env.kwargs.depth=5 \
-    env.kwargs.terminal_reward_stdev=[0.1,1.0,2.0,5.0,10.0] \
-    agent=sf_return \
-    agent.kwargs.lr=[0.01,0.1,0.2,0.3] \
-    agent.kwargs.sf_lr=[0.01,0.1,0.2,0.3] \
-    agent.kwargs.reward_lr=[0.01,0.1,0.2,0.3] \
+    training.seed=$SEEDS \
+    training.param_reset.freq=400 \
+    training.param_reset.attr_strs='Wr' \
+    env=lehnert_grid \
+    env.kwargs.width=10 \
+    env.kwargs.slip_prob=0.05 \
+    env.kwargs.episode_max_length=200 \
+    env.kwargs.start_switch_freq=400 \
+    env.kwargs.goal_switch_freq=400 \
+    agent=sf_q_learning \
     agent.kwargs.gamma=0.9 \
+    agent.kwargs.policy_epsilon=0.3 \
+    agent.kwargs.use_lambda_q_control=True \
     agent.kwargs.lamb=[0.0,0.3,0.5,0.7,0.9,1.0] \
-    agent.kwargs.eta_trace=[0.0,0.5,0.7,0.9,1.0] \
-    agent.kwargs.use_true_sf_params=[False] \
-    agent.kwargs.use_true_reward_params=[False] \
+    agent.kwargs.eta_trace=0.0 \
+    agent.kwargs.lr=[1e-3,1e-2,0.1,0.2,0.3] \
+    agent.kwargs.reward_lr=null \
+    agent.kwargs.sf_lr=null \
+    agent.kwargs.optim.cls_string='SGD' \
 
 # (4) Copy things over to scratch?
 # cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/

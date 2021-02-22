@@ -5,13 +5,21 @@
 # =============================================================================
 
 import copy
+from collections import namedtuple
 from typing import List, Tuple
 
 from gym import spaces
 import numpy as np
 
 from algos.base import BaseLinearAgent
-from utils.optim import RMSProp
+from utils.optim import *
+
+LogTupStruct = namedtuple(
+    'LogTupStruct',
+    field_names=['lamb', 'eta_trace', 'lr', 'reward_lr', 'sf_lr',
+                 'policy_epsilon', 'use_lambda_q_control', 'optim',
+                 'value_loss_avg', 'sf_loss_avg', 'reward_loss_avg']
+)
 
 
 class LambdaSFQAgent(BaseLinearAgent):
@@ -24,7 +32,8 @@ class LambdaSFQAgent(BaseLinearAgent):
                  reward_lr=None,
                  sf_lr=None,
                  policy_epsilon=0.3,
-                 optim_kwargs=None,
+                 use_lambda_q_control=False,
+                 optim=None,
                  seed=0):
         """
         TODO define arguments
@@ -41,6 +50,7 @@ class LambdaSFQAgent(BaseLinearAgent):
         self.lamb = lamb
         self.eta_trace = eta_trace  # value fn bwd trace
         self.policy_epsilon = policy_epsilon
+        self.use_lambda_q_control = use_lambda_q_control
 
         self.value_lr = lr
         self.reward_lr = lr if reward_lr is None else reward_lr
@@ -48,12 +58,13 @@ class LambdaSFQAgent(BaseLinearAgent):
 
         # ==
         # Initialize parameters
-        optim_kwargs = {} if optim_kwargs is None else optim_kwargs
+        optim_cls = globals()[optim['cls_string']]
+        optim_kwargs = {} if optim['kwargs'] is None else optim['kwargs']
 
         # Reward parameters
         self.Wr = self.rng.uniform(0.0, 1e-5,
                                    size=self.feature_dim)
-        self.Wr_optim = RMSProp(self.Wr, lr=self.reward_lr, **optim_kwargs)
+        self.Wr_optim = optim_cls(self.Wr, lr=self.reward_lr, **optim_kwargs)
 
         # SF parameters
         self.Ws = np.zeros(
@@ -61,20 +72,22 @@ class LambdaSFQAgent(BaseLinearAgent):
         )  # |A| * d * D
         ws_idxs = np.arange(self.feature_dim)
         self.Ws[:, ws_idxs, ws_idxs] = 1.0  # identity initialization
-        self.Ws_optim = RMSProp(self.Ws, lr=self.sf_lr, **optim_kwargs)
+        self.Ws_optim = optim_cls(self.Ws, lr=self.sf_lr, **optim_kwargs)
 
         # Value parameters
         self.Wq = self.rng.uniform(
             0.0, 1e-5,
             size=(self.num_actions, self.feature_dim)
         )
-        self.Wq_optim = RMSProp(self.Wq, lr=self.value_lr, **optim_kwargs)
-
-
+        self.Wq_optim = optim_cls(self.Wq, lr=self.value_lr, **optim_kwargs)
 
         # ==
         # Trace  # TODO not tested for validity
         self.Zq = np.zeros((self.num_actions, self.feature_dim))
+
+        # ==
+        # For logging
+        self.logTupStruct = LogTupStruct
 
     def begin_episode(self, phi):
         action = super().begin_episode(phi)
@@ -214,7 +227,7 @@ class LambdaSFQAgent(BaseLinearAgent):
         sf_theta = np.sum((sf * self.Wq), axis=1)  # (num_actions, )
         sf_w = np.matmul(sf, self.Wr)  # (num_actions, )
 
-        q_vec = (1-self.lamb) * sf_theta + (self.lamb * sf_w)
+        q_vec = (1 - self.lamb) * sf_theta + (self.lamb * sf_w)
 
         return q_vec
 
@@ -231,7 +244,10 @@ class LambdaSFQAgent(BaseLinearAgent):
             action = self.rng.choice(self.num_actions)
         # Greedy action
         else:
-            q_vec = self.Wq @ phi  # (n_actions, )
+            if self.use_lambda_q_control:
+                q_vec = self.compute_lambda_Q_function(phi)
+            else:
+                q_vec = self.Wq @ phi  # (n_actions, )
             action = np.argmax(q_vec)
 
         return action
