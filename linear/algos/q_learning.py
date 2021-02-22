@@ -4,6 +4,7 @@
 # Author: Anthony G. Chen
 # =============================================================================
 
+from collections import namedtuple
 from typing import List, Tuple
 
 from gym import spaces
@@ -11,6 +12,12 @@ import numpy as np
 
 from algos.base import BaseLinearAgent
 from utils.optim import RMSProp
+
+LogTupStruct = namedtuple(
+    'LogTupStruct',
+    field_names=['lamb', 'lr', 'policy_epsilon', 'optim_kwargs',
+                 'value_loss_avg']
+)
 
 
 class QAgent(BaseLinearAgent):
@@ -43,6 +50,10 @@ class QAgent(BaseLinearAgent):
         # ==
         # Initialize trace (TODO implement and check validity?)
         self.Z = np.zeros((self.feature_dim, self.num_actions))
+
+        # ==
+        # For logging
+        self.logTupStruct = LogTupStruct
 
     def begin_episode(self, phi):
         action = super().begin_episode(phi)

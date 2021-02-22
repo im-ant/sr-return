@@ -6,7 +6,7 @@
 
 import argparse
 import configparser
-import dataclasses
+from collections import namedtuple
 from itertools import product
 import json
 import logging
@@ -24,35 +24,12 @@ from algos.sf_q_learning import LambdaSFQAgent
 from envs.lehnert_grid import LehnertGridWorldEnv
 import utils.mdp_utils as mut
 
-
-@dataclasses.dataclass
-class LogTupStruct:
-    num_episodes: int = None
-    envCls_name: str = None
-    env_kwargs: str = None
-    agentCls_name: str = None
-    seed: int = None
-    gamma: float = None
-    lr: float = None
-    sf_lr: float = None
-    optim_kwargs: str = None
-    reward_lr: float = None
-    lamb: float = None
-    eta_trace: float = None
-    policy_epsilon: float = None
-    use_true_reward_params: bool = None
-    use_true_sf_params: bool = None
-    episode_idx: int = None  # episodic-specific logs
-    total_steps: int = None
-    cumulative_reward: float = None
-    v_fn_rmse: float = None
-    sf_G_rmse: float = None
-    sf_matrix_rmse: float = None
-    reward_vec_rmse: float = None
-    value_loss_avg: float = None  # agent log dict specific logs
-    reward_loss_avg: float = None
-    sf_loss_avg: float = None
-    et_loss_avg: float = None
+LogTupStruct = namedtuple(
+    'LogTupStruct',
+    field_names=['num_episodes', 'envCls_name', 'env_kwargs', 'agentCls_name',
+                 'seed', 'episode_idx', 'total_steps', 'cumulative_reward',
+                 'gamma']
+)
 
 
 def init_logger(logging_path: str) -> logging.Logger:
@@ -130,13 +107,7 @@ def _extract_agent_log_dict(agent):
     :return: dictionary for epis_log_dict
     """
     # The output log dictionary
-    # NOTE: need ot make this fit with the keys of LogTupStruct
-    log_dict = {
-        'value_loss_avg': None,
-        'reward_loss_avg': None,
-        'sf_loss_avg': None,
-        'et_loss_avg': None,
-    }
+    log_dict = {}
 
     # ==
     # Extract agent log
@@ -174,48 +145,59 @@ def _extract_agent_log_dict(agent):
 def write_post_episode_log(cfg: DictConfig,
                            episode_dict: dict,
                            environment, agent,
-                           logger) -> None:
+                           logger,
+                           write_header=False) -> None:
+    # ==
+    # Construct the base namedtuple
     log_dict = {
         'num_episodes': cfg.training.num_episodes,
         'envCls_name': cfg.env.cls_string,
         'env_kwargs': str(cfg.env.kwargs),
         'agentCls_name': cfg.agent.cls_string,
         'seed': cfg.training.seed,  # global seed
-        'lr': cfg.agent.lr,
+        'episode_idx': episode_dict['episode_idx'],  # episode-specific
+        'total_steps': episode_dict['total_steps'],
+        'cumulative_reward': episode_dict['cumulative_reward']
     }
 
-    # Assume all agent kwargs are available in log
+    # Agent attributes to put in the base log
     for k in cfg.agent.kwargs:
-        if isinstance(cfg.agent.kwargs[k], numbers.Number):
+        if k in LogTupStruct._fields:
             log_dict[k] = cfg.agent.kwargs[k]
-        else:
-            log_dict[k] = str(cfg.agent.kwargs[k])
+
+    baselogTup = LogTupStruct(**log_dict)
 
     # ==
-    # episode-specific logs
+    # Agent specific namedtuple
 
-    log_dict['episode_idx'] = episode_dict['episode_idx']
-    log_dict['total_steps'] = episode_dict['total_steps']
-    log_dict['cumulative_reward'] = episode_dict['cumulative_reward']
+    ag_logTupStruct = agent.logTupStruct
+    ag_log_dict = {}
 
-    # ==
-    # Get losses from the agent logs
+    # Agent attributes
+    for k in cfg.agent.kwargs:
+        if k in ag_logTupStruct._fields:
+            ag_log_dict[k] = cfg.agent.kwargs[k]
+    # Agent losses
     agent_log_dict = _extract_agent_log_dict(agent)
     for k in agent_log_dict:
-        log_dict[k] = agent_log_dict[k]
+        ag_log_dict[k] = agent_log_dict[k]
+
+    agLotTup = ag_logTupStruct(**ag_log_dict)
 
     # ==
-    # Write the output log
+    # Combine and write out
+    outTupStruct = namedtuple("LogTup", baselogTup._fields + agLotTup._fields)
+    outTup = outTupStruct(*baselogTup, *agLotTup)
+    outDict = outTup._asdict()
 
-    # Construct log output
-    logStructDict = dataclasses.asdict(LogTupStruct(**log_dict))
-    log_str = '||'.join([str(logStructDict[k]) for k in logStructDict])
-    # Write or print
-    if logger is not None:
-        logger.info(log_str)
-    else:
-        if (episode_idx + 1) % args.log_print_freq == 0:  # I think this is not used anymore
-            print(log_str)
+    # Possibly write title
+    if write_header:
+        log_title_str = '||'.join(outTup._fields)
+        logger.info(log_title_str)
+
+    # Write log
+    log_str = '||'.join([str(outDict[k]) for k in outDict])
+    logger.info(log_str)
 
 
 def post_episode_updates(cfg: DictConfig, episode_idx: int,
@@ -290,11 +272,13 @@ def run_single_linear_experiment(cfg: DictConfig,
                     'total_steps': steps,
                     'cumulative_reward': cumulative_reward,
                 }
+                write_header = True if episode_idx == 0 else False
                 write_post_episode_log(cfg=cfg,
                                        episode_dict=post_epis_dict,
                                        environment=environment,
                                        agent=agent,
-                                       logger=logger)
+                                       logger=logger,
+                                       write_header=write_header)
 
                 # ==
                 # (Potential resets)
@@ -411,14 +395,11 @@ def main(cfg: DictConfig) -> None:
 
     # =====================================================
     # Initialize logger
-    dc_fields = [k for k in vars(LogTupStruct())]  # temp object to get name
-    log_title_str = '||'.join(dc_fields)
     if cfg.logging.dir_path is not None:
         log_path = os.path.join(cfg.logging.dir_path, 'progress.csv')
         logger = init_logger(log_path)
-        logger.info(log_title_str)
+        print(f'{logger}: {log_path}')
     else:
-        print(log_title_str)
         logger = None
 
     # =====================================================

@@ -5,6 +5,7 @@
 # =============================================================================
 
 import copy
+from collections import namedtuple
 from typing import List, Tuple
 
 from gym import spaces
@@ -12,6 +13,12 @@ import numpy as np
 
 from algos.base import BaseLinearAgent
 from utils.optim import RMSProp
+
+LogTupStruct = namedtuple(
+    'LogTupStruct',
+    field_names=['lamb', 'lr', 'policy_epsilon', 'optim_kwargs',
+                 'value_loss_avg', 'sf_loss_avg', 'reward_loss_avg']
+)
 
 
 class LambdaSFQAgent(BaseLinearAgent):
@@ -75,6 +82,10 @@ class LambdaSFQAgent(BaseLinearAgent):
         # ==
         # Trace  # TODO not tested for validity
         self.Zq = np.zeros((self.num_actions, self.feature_dim))
+
+        # ==
+        # For logging
+        self.logTupStruct = LogTupStruct
 
     def begin_episode(self, phi):
         action = super().begin_episode(phi)
