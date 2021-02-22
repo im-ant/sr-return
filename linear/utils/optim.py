@@ -8,18 +8,29 @@
 import numpy as np
 
 
-class AdaGradBase:
+class SGD:
     """
-    Base class of adaptive gradient methods
+    Base stochastic gradient descent class
     """
 
     def __init__(self, param_like, lr=0.01):
         self.param_like = param_like
         self.lr = lr
-        pass
+
+    def step(self, grad):
+        """
+        Simple SGD step
+        :param grad: gradient of parameters
+        :return: gradient step to take
+        """
+        return self.lr * grad
 
 
-class RMSProp(AdaGradBase):
+class RMSProp(SGD):
+    """
+    RMSProp with bias correction
+    """
+
     def __init__(self, param_like, lr=0.01, smoothing_alpha=0.99, eps=1e-8):
         super().__init__(param_like, lr)
         self.smoothing_alpha = smoothing_alpha
@@ -33,13 +44,13 @@ class RMSProp(AdaGradBase):
     def step(self, grad):
         # Exponential update of mean squared gradients
         self.ms_grads = ((self.smoothing_alpha * self.ms_grads)
-                         + (1-self.smoothing_alpha) * (grad ** 2))
+                         + (1 - self.smoothing_alpha) * (grad ** 2))
 
         # Compute the adaptive denominator for the gradient
         # NOTE: with initial bias correction
         denom = np.sqrt(
             self.ms_grads /
-            (1 - (self.smoothing_alpha ** (self.num_steps+1)))
+            (1 - (self.smoothing_alpha ** (self.num_steps + 1)))
         )
 
         # Compute the delta for the parameter updates

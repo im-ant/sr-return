@@ -84,19 +84,6 @@ def _initialize_agent(cfg: DictConfig, environment) -> object:
         **agent_kwargs
     )
 
-    # ==
-    # (Optional) Initialize true reward and SF functions
-
-    # Initialize solved reward parameters
-    """ TODO fix
-    if hasattr(cfg.agent.kwargs, 'use_true_reward_params'):
-        if cfg.agent.kwargs.use_true_reward_params:
-            linear_reward_param = mut.solve_linear_reward_param(
-                env=environment,
-            )
-            agent.Wr = linear_reward_param
-    """
-
     return agent
 
 
@@ -257,8 +244,6 @@ def run_single_linear_experiment(cfg: DictConfig,
             # Interact with environment
             obs, reward, done, info = environment.step(action)
             action = agent.step(obs, reward, done)
-
-            # print(f'state: {environment.state}, r: {reward}, done: {done}, a: {action}')  # TODO DELETE
 
             # Tracker variables
             cumulative_reward += reward

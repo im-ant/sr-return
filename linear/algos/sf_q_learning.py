@@ -12,12 +12,12 @@ from gym import spaces
 import numpy as np
 
 from algos.base import BaseLinearAgent
-from utils.optim import RMSProp
+from utils.optim import *
 
 LogTupStruct = namedtuple(
     'LogTupStruct',
     field_names=['lamb', 'eta_trace', 'lr', 'reward_lr', 'sf_lr',
-                 'policy_epsilon', 'use_lambda_q_control', 'optim_kwargs',
+                 'policy_epsilon', 'use_lambda_q_control', 'optim',
                  'value_loss_avg', 'sf_loss_avg', 'reward_loss_avg']
 )
 
@@ -33,7 +33,7 @@ class LambdaSFQAgent(BaseLinearAgent):
                  sf_lr=None,
                  policy_epsilon=0.3,
                  use_lambda_q_control=False,
-                 optim_kwargs=None,
+                 optim=None,
                  seed=0):
         """
         TODO define arguments
@@ -58,12 +58,13 @@ class LambdaSFQAgent(BaseLinearAgent):
 
         # ==
         # Initialize parameters
-        optim_kwargs = {} if optim_kwargs is None else optim_kwargs
+        optim_cls = globals()[optim['cls_string']]
+        optim_kwargs = {} if optim['kwargs'] is None else optim['kwargs']
 
         # Reward parameters
         self.Wr = self.rng.uniform(0.0, 1e-5,
                                    size=self.feature_dim)
-        self.Wr_optim = RMSProp(self.Wr, lr=self.reward_lr, **optim_kwargs)
+        self.Wr_optim = optim_cls(self.Wr, lr=self.reward_lr, **optim_kwargs)
 
         # SF parameters
         self.Ws = np.zeros(
@@ -71,14 +72,14 @@ class LambdaSFQAgent(BaseLinearAgent):
         )  # |A| * d * D
         ws_idxs = np.arange(self.feature_dim)
         self.Ws[:, ws_idxs, ws_idxs] = 1.0  # identity initialization
-        self.Ws_optim = RMSProp(self.Ws, lr=self.sf_lr, **optim_kwargs)
+        self.Ws_optim = optim_cls(self.Ws, lr=self.sf_lr, **optim_kwargs)
 
         # Value parameters
         self.Wq = self.rng.uniform(
             0.0, 1e-5,
             size=(self.num_actions, self.feature_dim)
         )
-        self.Wq_optim = RMSProp(self.Wq, lr=self.value_lr, **optim_kwargs)
+        self.Wq_optim = optim_cls(self.Wq, lr=self.value_lr, **optim_kwargs)
 
         # ==
         # Trace  # TODO not tested for validity
