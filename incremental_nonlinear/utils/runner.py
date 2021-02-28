@@ -481,6 +481,7 @@ class AsynchBatchedOfflineRunner(BaseRunner):
 
         lock = mp.Lock()
         self.algo.lock = lock
+        self.algo.actor.model.share_memory()
 
         sampler = AsynchSampler(
             actor=self.algo.actor,
@@ -552,8 +553,12 @@ class AsynchBatchedOfflineRunner(BaseRunner):
 
                     # Train network
                     if batch_sample is not None:
+                        loss = self.algo.compute_loss(batch_sample)
+                        self.algo.optimizer.zero_grad()
+                        loss.backward()
                         with lock:
-                            out_dict = self.algo.optimize_agent(batch_sample, step_counts)
+                            self.algo.optimizer.step()
+                        out_dict = self.algo.post_update_step(loss)
 
         sampler.close()
         replay_buffer.close()
