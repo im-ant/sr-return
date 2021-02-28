@@ -7,13 +7,22 @@
 #
 # Author: Anthony G Chen
 # ============================================================================
-from collections import namedtuple
+from collections import namedtuple, deque
 import dataclasses
 import json
 import logging
 import os
+import time
 
 import torch
+import torch.multiprocessing as mp
+
+# ==
+# NOTE: need to do this for multiprocess to work with torch
+try:
+    mp.set_start_method('forkserver')  # forkserver or spawn
+except RuntimeError:
+    pass
 
 
 # ==
@@ -213,9 +222,6 @@ class BaseRunner(object):
             algo.episode_reset()  # clear elig traces, etc.
 
             is_terminated = False
-            # s_last = None  # TODO delete after
-            # r_last = None  # TODO delete after
-            #  term_last = None  # TODO delete after
 
             while (not is_terminated) and total_steps < n_steps:
                 # Generate data
@@ -223,7 +229,6 @@ class BaseRunner(object):
                     s, env, algo, total_steps,
                 )
 
-                # sample = TransitionTuple(s, s_last, action, r_last, term_last)  # TODO delete after this
                 sample = TransitionTuple(s, s_prime, action, reward, is_terminated)
 
                 out_dict = self.one_training_step(sample, total_steps)
@@ -235,16 +240,10 @@ class BaseRunner(object):
                 cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)
 
                 # Continue the process
-                # s_last = s  # TODO delete after
-                # r_last = reward  # TODO delete after
-                # term_last = is_terminated  # TODO delete after
                 s = s_prime
 
             # Increment the episodes
             episode_count += 1
-            # sample = TransitionTuple(s, s_last, s_prime, action, r_last, term_last)  # TODO delete after this
-            # out_dict = self.algo.optimize_agent(sample, total_steps)  # TODO delete after this
-            # cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)  # TODO delete after this
 
             cur_avg_dict = avg_log_dict(cur_sum_dict, current_episode_steps)
 
@@ -430,3 +429,254 @@ class BatchedOfflineRunner(BaseRunner):
                 out_dict = self.algo.optimize_agent(batch_sample, total_steps)
 
         return out_dict
+
+
+class AsynchBatchedOfflineRunner(BaseRunner):
+    def __init__(self, algo, EnvCls, env_kwargs,
+                 BufferCls, buffer_kwargs,
+                 batch_size=32,  # dummy
+                 replay_start_buffer_size=5000,
+                 train_every_n_frames=1,
+                 train_iterations=1,
+                 log_interval_episodes=10,
+                 log_dir_path=None,
+                 store_checkpoint=False,
+                 checkpoint_type='interval',
+                 checkpoint_freq=2000,
+                 checkpoint_dir_path='./checkpoints/',
+                 load_model_path=None,
+                 device='cpu'):
+        super().__init__(
+            algo, EnvCls, env_kwargs,
+            log_interval_episodes=log_interval_episodes,
+            log_dir_path=log_dir_path,
+            store_checkpoint=store_checkpoint,
+            checkpoint_type=checkpoint_type,
+            checkpoint_freq=checkpoint_freq,
+            checkpoint_dir_path=checkpoint_dir_path,
+            load_model_path=load_model_path,
+            device=device,
+        )
+
+        self.BufferCls = BufferCls
+        self.buffer_kwargs = buffer_kwargs
+        self.replay_start_buffer_size = replay_start_buffer_size
+        self.train_every_n_frames = train_every_n_frames
+        self.train_iterations = train_iterations
+
+    def train(self, n_steps):
+        # ==
+        # Setting up logging
+        dc_fields = [k for k in vars(LogTupStruct())]  # temp object to get name
+        log_title_str = self.log_delim_str.join(dc_fields)
+        if self.log_dir_path is not None:
+            log_path = os.path.join(self.log_dir_path, 'progress.csv')
+            self.init_logger(log_path)
+            self.logger.info(log_title_str)
+        else:
+            print(log_title_str)
+
+        # ==
+        # Initialize processes
+
+        lock = mp.Lock()
+        self.algo.lock = lock
+
+        sampler = AsynchSampler(
+            actor=self.algo.actor,
+            EnvCls=self.EnvCls,
+            env_kwargs=self.env_kwargs,
+            lock=lock,
+            device=self.device,
+            train_every_n_frames=self.train_every_n_frames,
+        )
+
+        replay_buffer = self.BufferCls(**self.buffer_kwargs)
+
+        # ==
+        # Helper for sampling from buffer
+        def buffer_sample():
+            cur_buffer_size = replay_buffer.get_size()
+            if ((cur_buffer_size > self.replay_start_buffer_size)
+                    and (cur_buffer_size > self.buffer_kwargs['batch_size'])):
+                sample_batch = replay_buffer.sample()  # (batch_n, iter)
+                if sample_batch is not None:
+                    batch_sample = TransitionTuple(
+                        *[torch.cat(e) for e in zip(*sample_batch)]
+                    )  # (tuple key: torch.tensor of (batch_n, *)
+                    return batch_sample
+            return None
+
+        # ==
+        # Counter variables and iterate training
+        step_counts = 0
+        episode_count = 0
+
+        current_episode_steps = 0
+        current_episode_return = 0.0
+
+        while step_counts < n_steps:
+
+            # ==
+            # Sample environment for transitions
+            transitions_lists = sampler.step()  # (train_every_n_frames, ) dicts
+
+            # ==
+            # Record statistics and store to buffer
+            for tranList in transitions_lists:
+                # ==
+                # Process statistics
+                # List entries: state, next_state, action, reward, is_terminal
+                current_episode_steps += 1
+                current_episode_return += tranList[3].item()  # reward
+
+                if tranList[4].item():  # if done
+                    episode_count += 1
+
+                    self.write_log(episode_count, step_counts,
+                                   current_episode_return,
+                                   info_dict={})
+
+                    current_episode_steps = 0
+                    current_episode_return = 0.0
+
+                step_counts += 1
+                replay_buffer.add(tranList)
+
+            # ==
+            # Train
+            if step_counts >= self.replay_start_buffer_size:
+                for _ in range(self.train_iterations):
+                    # Sample
+                    batch_sample = buffer_sample()
+
+                    # Train network
+                    if batch_sample is not None:
+                        with lock:
+                            out_dict = self.algo.optimize_agent(batch_sample, step_counts)
+
+        sampler.close()
+        replay_buffer.close()
+
+
+class AsynchSampler(mp.Process):
+    """
+    Asynchronous sampler for actor-environment interaction samples
+    Inspired by
+    https://github.com/ShangtongZhang/DeepRL/blob/master/deep_rl/agent/BaseAgent.py
+    """
+    STEP = 0
+    RESET = 1
+    EXIT = 2
+    SPECS = 3
+    NETWORK = 4
+    CACHE = 5
+
+    def __init__(self, actor, EnvCls, env_kwargs, lock, device,
+                 train_every_n_frames=1):
+        mp.Process.__init__(self)
+        self.__pipe, self.__worker_pipe = mp.Pipe()
+
+        self._actor = actor
+        self.EnvCls = EnvCls
+        self.env_kwargs = env_kwargs
+        self.device = device
+        self.train_every_n_frames = train_every_n_frames
+
+        self._env = self.EnvCls(**self.env_kwargs)
+
+        self._state = None
+        self._total_steps = 0
+        self.__cache_len = 2
+
+        self.lock = lock
+
+        self.start()  # start process
+
+    def _sample(self):
+        transitions = []
+        for _ in range(self.train_every_n_frames):
+            transition = self._transition()
+            if transition is not None:
+                transitions.append(transition)
+        return transitions
+
+    def _transition(self):
+        """
+        Environment-action loop
+        :return: namedtuple of individual transitions
+        """
+
+        def cast_state(s):
+            tensor_s = torch.tensor(s, device=self.device)
+            tensor_s = tensor_s.permute(2, 0, 1).unsqueeze(0).float()
+            return tensor_s
+
+        # Start of episode
+        if self._state is None:
+            self._env.reset()
+            self._state = cast_state(self._env.state())
+            # algo.episode_reset()   # NOTE maybe add some version of this
+
+        # Take action
+        with self.lock:
+            with torch.no_grad():
+                # NOTE maybe TODO: potential speed-up with using only network here
+                # rather than using the agent rng for sampling while locked
+                t_action = self._actor.get_action(self._state, self._total_steps)
+
+        # Get environment outcomes (MinAtar specific)
+        action = t_action.item()
+        reward, terminated = self._env.act(action)
+
+        t_reward = torch.tensor([[reward]], device=self.device).float()
+        t_terminated = torch.tensor([[terminated]], device=self.device)
+        s_prime = cast_state(self._env.state())
+
+        # Get transition
+        # Order: 'state', 'next_state', 'action', 'reward', 'is_terminal'
+        transition = [self._state, s_prime, t_action, t_reward, t_terminated]
+
+        # Increment
+        self._total_steps += 1
+        self._state = None if terminated else s_prime.clone()
+
+        return transition
+
+    def _set_up(self):
+        pass
+
+    def run(self):
+        self._set_up()
+        self._env = self.EnvCls(**self.env_kwargs)
+
+        cache = deque([], maxlen=2)
+        while True:
+            op, data = self.__worker_pipe.recv()
+            if op == self.STEP:
+                if not len(cache):
+                    cache.append(self._sample())
+                    cache.append(self._sample())
+                self.__worker_pipe.send(cache.popleft())
+                cache.append(self._sample())
+            elif op == self.EXIT:
+                self.__worker_pipe.close()
+                return
+            elif op == self.NETWORK:
+                self._actor.set_model(data)
+            else:
+                raise NotImplementedError
+
+    def step(self):
+        self.__pipe.send([self.STEP, None])
+        return self.__pipe.recv()
+
+    def close(self):
+        self.__pipe.send([self.EXIT, None])
+        self.__pipe.close()
+
+    def set_network(self, net):
+        if not self.config.async_actor:
+            self._actor.set_model(net)
+        else:
+            self.__pipe.send([self.NETWORK, net])
