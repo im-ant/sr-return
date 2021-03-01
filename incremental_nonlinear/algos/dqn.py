@@ -5,6 +5,7 @@
 #
 # Anthony G. Chen
 # ============================================================================
+from collections import namedtuple
 
 import numpy as np
 import torch
@@ -12,6 +13,18 @@ import torch.nn as nn
 import torch.nn.functional as f
 import torch.optim as optim
 
+
+# ==
+# Logging related
+LogTupFields = ['value_loss']
+LogTupStruct = namedtuple(
+    'LogTupStruct',
+    field_names=LogTupFields, defaults=(None, ) * len(LogTupFields)
+)
+
+
+# ==
+# Agent algorithms
 
 class DQN:
     """
@@ -60,6 +73,9 @@ class DQN:
         self.policy_updates_per_target_update = policy_updates_per_target_update
 
         self.rng = np.random.default_rng(seed)
+
+        # Logging
+        self.logTupStruct = LogTupStruct
 
         # Counter variables
         self.policy_updates_counter = 0
