@@ -18,7 +18,7 @@ from algos.dqn import DQN
 from models.ac_network import ACNetwork
 from models.lsf_ac_network import LSF_ACNetwork
 from models.q_network import QNetwork
-from utils.runner import IncrementalOnlineRunner, BatchedOfflineRunner
+from utils.runner import *
 from utils.replay_buffer import *
 
 
@@ -62,6 +62,21 @@ def build_and_train(cfg: DictConfig, cuda_idx=None, seed=None):
             **cfg.runner.buffer_kwargs,
         }
         runner = BatchedOfflineRunner(
+            algo=proto_algo,
+            EnvCls=env_cls,
+            env_kwargs=env_kwargs,
+            device=cuda_idx,
+            BufferCls=BufferCls,
+            buffer_kwargs=buffer_kwargs,
+            **cfg.runner.kwargs,
+        )
+    elif cfg.runner.cls_string == 'AsynchBatchedOfflineRunner':
+        BufferCls = AsynchSimpleReplayBuffer
+        buffer_kwargs = {
+            'seed': seed,
+            **cfg.runner.buffer_kwargs,
+        }
+        runner = AsynchBatchedOfflineRunner(
             algo=proto_algo,
             EnvCls=env_cls,
             env_kwargs=env_kwargs,
