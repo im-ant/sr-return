@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# ============================================================================
+# Script submitted to sbatch to run a hydra parameter sweep on the cluster
+#
+# Author: Anthony G. Chen
+# ============================================================================
+
+# Format for where to put the parameter sweep outputs
+sweep_parent_dir='/network/tmp1/chenant/ant/sr_trace/${now:%Y-%m-%d}/${now:%H-%M-%S}'
+
+# ===========================
+# Experimental set-up
+
+# (1.1) Load packages
+module load python/3.7
+module load python/3.7/cuda/10.1/cudnn/7.6/pytorch/1.5.0
+
+# (1.2) Load environment
+source $HOME/venvs/rlpyt/bin/activate
+
+# (2) no data to copy
+
+# (3) launch job with parameter sweeps
+#python -u train_incremental.py --multirun \
+sweep_parent_dir='/miniscratch/chenant/ant/sr_return/2021-02-28/speed_test/${now:%H-%M-%S}_asynch'
+python -u train_nonlinear.py --multirun \
+    hydra.run.dir=$sweep_parent_dir \
+    hydra.sweep.dir=$sweep_parent_dir \
+    runner=asynch_batched_offline \
+    runner.n_steps=25e5 \
+    runner.kwargs.log_interval_episodes=10 \
+    runner.kwargs.store_checkpoint=False \
+    runner.kwargs.checkpoint_freq=2500 \
+    runner.kwargs.train_every_n_frames=1 \
+    runner.kwargs.train_iterations=1 \
+    env.kwargs.env_name='breakout' \
+    algo=dqn \
+    algo.kwargs.discount_gamma=0.99 \
+    algo.kwargs.start_epsilon=1.0 \
+    algo.kwargs.end_epsilon=0.1 \
+    algo.kwargs.initial_epsilon_length=5000 \
+    algo.kwargs.epsilon_anneal_length=10000 \
+    algo.kwargs.use_target_net=True \
+    algo.kwargs.policy_updates_per_target_update=1000 \
+    algo.kwargs.optim_kwargs.lr=0.00025 \
+    algo.kwargs.optim_kwargs.alpha=0.95 \
+    model=q_network \
+    training.seed=2 \
+
+# (4) Copy things over to scratch?
+# cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/
