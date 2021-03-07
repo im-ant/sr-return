@@ -10,13 +10,13 @@ set -e
 job_name="minatar_hydra"
 
 # Error file output parent directory
-stdout_dir="/network/tmp1/chenant/ant/sr_trace/stdout_error"
+stdout_dir="/miniscratch/chenant/ant/sr_return/stdout_error"
 
 # Job file path
-job_file="/home/mila/c/chenant/repos/sr-return/linear/arg-job_train_hydra.script"
+job_file="/home/mila/c/chenant/repos/sr-return/nonlinear/arg-job_train_hydra.script"
 
 # Job partition (same for all jobs)
-partition_per_job="main,long"
+partition_per_job="long"
 
 # Job resource (same for all jobs)
 # pascal: [titanx, titanxp]; turing: [titanrtx, rtx8000];
@@ -34,9 +34,12 @@ time_per_job="48:00:00"
 
 # Specify the list of seeds
 seeds_list=(
-'2' '4' '6' '8' '10' '12' '14' '16' '18' '20'
-'22' '24' '26' '28' '30' '32' '34' '36' '38' '40'
+'3' '6' '9' '12' '15' '18'
 )
+
+#'4' '6' '8' '10' '12' '14' '16' '18' '20'
+#'22' '24' '26' '28' '30' '32' '34' '36' '38' '40'
+
 
 
 

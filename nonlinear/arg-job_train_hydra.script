@@ -7,7 +7,10 @@
 # ============================================================================
 
 # Format for where to put the parameter sweep outputs
-sweep_parent_dir='/network/tmp1/chenant/ant/sr_trace/${now:%Y-%m-%d}/${now:%H-%M-%S}'
+# sweep_parent_dir='/network/tmp1/chenant/ant/sr_trace/${now:%Y-%m-%d}/${now:%H-%M-%S}'
+
+# Seed variable
+SEEDS=$seeds
 
 # ===========================
 # Experimental set-up
@@ -22,31 +25,36 @@ source $HOME/venvs/rlpyt/bin/activate
 # (2) no data to copy
 
 # (3) launch job with parameter sweeps
-#python -u train_incremental.py --multirun \
-sweep_parent_dir='/miniscratch/chenant/ant/sr_return/2021-02-28/speed_test/${now:%H-%M-%S}_asynch'
+base_dir='/miniscratch/chenant/ant/sr_return/2021-03-06/23-10-00_dqn/space_invaders/${now:%H-%M-%S}'
+add_name="_s$SEEDS"
+sweep_parent_dir=$base_dir$add_name
+
 python -u train_nonlinear.py --multirun \
     hydra.run.dir=$sweep_parent_dir \
     hydra.sweep.dir=$sweep_parent_dir \
-    runner=asynch_batched_offline \
-    runner.n_steps=25e5 \
+    runner=batched_offline \
+    runner.n_steps=5e6 \
     runner.kwargs.log_interval_episodes=10 \
-    runner.kwargs.store_checkpoint=False \
+    runner.kwargs.store_checkpoint=True \
     runner.kwargs.checkpoint_freq=2500 \
     runner.kwargs.train_every_n_frames=1 \
     runner.kwargs.train_iterations=1 \
-    env.kwargs.env_name='breakout' \
+    runner.kwargs.batch_size=32 \
+    runner.kwargs.replay_start_buffer_size=5000 \
+    runner.buffer_kwargs.buffer_size=100000 \
+    env.kwargs.env_name='space_invaders' \
     algo=dqn \
     algo.kwargs.discount_gamma=0.99 \
     algo.kwargs.start_epsilon=1.0 \
     algo.kwargs.end_epsilon=0.1 \
     algo.kwargs.initial_epsilon_length=5000 \
-    algo.kwargs.epsilon_anneal_length=10000 \
+    algo.kwargs.epsilon_anneal_length=100000 \
     algo.kwargs.use_target_net=True \
     algo.kwargs.policy_updates_per_target_update=1000 \
     algo.kwargs.optim_kwargs.lr=0.00025 \
     algo.kwargs.optim_kwargs.alpha=0.95 \
     model=q_network \
-    training.seed=2 \
+    training.seed=$SEEDS \
 
 # (4) Copy things over to scratch?
 # cp $EXP_LOG_PATH /network/tmp1/chenant/tmp/
