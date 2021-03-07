@@ -8,7 +8,6 @@
 # Author: Anthony G Chen
 # ============================================================================
 from collections import namedtuple, deque
-import dataclasses
 import json
 import logging
 import os
@@ -21,59 +20,46 @@ import torch.multiprocessing as mp
 # NOTE: need to do this for multiprocess to work with torch
 try:
     mp.set_start_method('forkserver')  # forkserver or spawn
-except RuntimeError:
+except RuntimeError as e:
+    print('mp RuntimeError:', e)
     pass
-
 
 # ==
 # Logging related
-@dataclasses.dataclass
-class LogTupStruct:
-    episode_count: int = None
-    total_steps: int = None
-    episode_return: float = None
-    exp_average_return: float = None
-    value_loss: float = None
-    reward_loss: float = None
-    sf_loss: float = None
-    lsf_v_v_diff: float = None
-    et_loss: float = None
+RunnerTupStruct = namedtuple(
+    'Runner',
+    field_names=['Diagnostic_env_name', 'Diagnostic_algo_name',
+                 'Diagnostic_episode_count', 'Diagnostic_step_count',
+                 'Diagnostic_sec_elapsed', 'Diagnostic_steps_per_sec',
+                 'Diagnostic_exp_average_return',
+                 'episode_return', 'episode_steps']
+)
 
 
-def add_log_dict(sum_dict, new_dict) -> dict:
+def aggregate_log_dict(agg_dict, new_dict) -> dict:
     """
-    Helper method to average two dicts' logs
-    :param sum_dict:
-    :param new_dict:
-    :return:
+    Aggregate the statistics of a log dict
+    :param agg_dict: aggregation dictionary
+    :param new_dict: dict with new stats
+    :return: new aggregation dict with aggregated
     """
-    if sum_dict is None:
-        return new_dict
-    if new_dict is None:
-        return sum_dict
-
     for k in new_dict:
-        val = new_dict[k]
-        if isinstance(val, float) or isinstance(val, int):
-            # Sum numerals
-            if k in sum_dict:
-                sum_dict[k] += val
-            else:
-                sum_dict[k] = val
-        else:
-            # Update numerals or non-existing numerals
-            sum_dict[k] = val
-    return sum_dict
+        # init new if not present
+        if k not in agg_dict:
+            agg_dict[k] = {
+                'n': 0,
+                'sum': 0.0,
+                'max': new_dict[k],
+                'min': new_dict[k],
+            }
+        # aggregate
+        agg_dict[k]['n'] += 1
+        agg_dict[k]['sum'] += new_dict[k]
+        agg_dict[k]['max'] = max(new_dict[k], agg_dict[k]['max'])
+        agg_dict[k]['min'] = min(new_dict[k], agg_dict[k]['min'])
+        # TODO: add more stats (e.g. stdev, max, minin the future)
 
-
-def avg_log_dict(sum_dict, n):
-    for k in sum_dict:
-        # Skip no-numerals
-        val = sum_dict[k]
-        if not (isinstance(val, float) or isinstance(val, int)):
-            continue
-        sum_dict[k] = val / n
-    return sum_dict
+    return agg_dict
 
 
 # ==
@@ -111,6 +97,7 @@ class BaseRunner(object):
         self.log_dir_path = log_dir_path
         self.logger = None
         self.log_delim_str = '|'
+        self.log_header_written = False
 
         self.store_checkpoint = store_checkpoint
         self.checkpoint_type = checkpoint_type
@@ -134,12 +121,6 @@ class BaseRunner(object):
             self.algo.model.load_state_dict(ckpt_model)
             self.algo.model = self.algo.model.to(self.device)
         print(self.algo)
-
-        # ==
-        # Counter items
-        self.exp_average_return = 0.0
-        self.log_interval_sum_return = 0.0
-        self.log_interval_sum_dict = None
 
     def init_logger(self, logger_path,
                     logger_name='Experiment') -> logging.Logger:
@@ -191,31 +172,35 @@ class BaseRunner(object):
     def train(self, n_steps):
         # ==
         # Setting up logging
-        dc_fields = [k for k in vars(LogTupStruct())]  # temp object to get name
-        log_title_str = self.log_delim_str.join(dc_fields)
         if self.log_dir_path is not None:
             log_path = os.path.join(self.log_dir_path, 'progress.csv')
             self.init_logger(log_path)
-            self.logger.info(log_title_str)
         else:
-            print(log_title_str)
+            self.logger = None
 
         # ==
         # Initialize
-        episode_count = 0
-        total_steps = 0
+        total_step_counts = 0
+        total_epis_counts = 0
+
+        t0 = time.time()
+        t_interval_steps = 0
+
+        # episode_count = 0
+        # total_steps = 0
+
+        cur_agg_dict = {}  # for logging per-step and per-epis stats
 
         env = self.environment
         algo = self.algo  # pass reference
 
         # ==
         # Run training
-        while total_steps < n_steps:
+        while total_step_counts < n_steps:
             # ==
             # Initialize environment and start state
             current_episode_steps = 0
             current_episode_return = 0.0
-            cur_sum_dict = None
 
             env.reset()
             s = self.get_state(env.state())
@@ -223,123 +208,165 @@ class BaseRunner(object):
 
             is_terminated = False
 
-            while (not is_terminated) and total_steps < n_steps:
+            while (not is_terminated) and total_step_counts < n_steps:
                 # Generate data
                 s_prime, action, reward, is_terminated = self.world_dynamics(
-                    s, env, algo, total_steps,
+                    s, env, algo, total_step_counts,
                 )
 
-                sample = TransitionTuple(s, s_prime, action, reward, is_terminated)
+                sample = [s, s_prime, action, reward, is_terminated]
 
-                out_dict = self.one_training_step(sample, total_steps)
+                out_dict = self.one_training_step(sample, total_step_counts)
+                cur_agg_dict = aggregate_log_dict(
+                    cur_agg_dict, out_dict
+                )  # aggregate stats
 
                 # Accumulate
                 current_episode_return += reward.item()
                 current_episode_steps += 1
-                total_steps += 1
-                cur_sum_dict = add_log_dict(cur_sum_dict, out_dict)
+                total_step_counts += 1
+                t_interval_steps += 1
 
                 # Continue the process
                 s = s_prime
 
             # Increment the episodes
-            episode_count += 1
-
-            cur_avg_dict = avg_log_dict(cur_sum_dict, current_episode_steps)
+            total_epis_counts += 1
+            cur_agg_dict = aggregate_log_dict(
+                cur_agg_dict,
+                {'episode_return': current_episode_return,
+                 'episode_steps': current_episode_steps}
+            )
 
             # ==
             # Write logs
-            self.write_log(episode_count, total_steps,
-                           current_episode_return,
-                           cur_avg_dict)
+            if total_epis_counts % self.log_interval_episodes == 0:
+                # Generate info dict to write
+                t_elapse = time.time() - t0
+                steps_ps = t_interval_steps / t_elapse
+                info_dict = {
+                    'Diagnostic/episode_count': total_epis_counts,
+                    'Diagnostic/step_count': total_step_counts,
+                    'Diagnostic/sec_elapsed': t_elapse,
+                    'Diagnostic/steps_per_sec': steps_ps,
+                }
+
+                # Write
+                self.write_log(info_dict, cur_agg_dict)
+
+                # Per log reset
+                t0 = time.time()
+                t_interval_steps = 0
+                cur_agg_dict = {}
 
             # ==
             # Potentially checkpoint
-            self.save_checkpoint(episode_count, total_steps,
-                                 current_episode_return,
-                                 cur_avg_dict)
+            if (self.store_checkpoint and
+                    total_epis_counts % self.checkpoint_freq == 0):
+                self.save_checkpoint(total_epis_counts, total_step_counts,
+                                     current_episode_return,
+                                     info_dict={})
 
         # ==
         # Post-training checkpoint
-        self.save_checkpoint(episode_count, total_steps,
+        self.save_checkpoint(total_epis_counts, total_step_counts,
                              current_episode_return,
-                             cur_avg_dict, force=True)
+                             info_dict={})
 
-    def write_log(self, episode_count, total_steps, episode_return,
-                  info_dict):
-        """Write log (at interval)"""
+    def write_log(self,
+                  info_dict: dict,
+                  aggregate_dict: dict):
+        """Write log"""
+
+        # Helpers
+        stat_list = ['Avg', 'Min', 'Max']
+
+        def construct_out_logfields(*tups):
+            """Helper method that takes in a variable number of namedtuples
+            and construct a joint namedtuple for write-out"""
+            fields = []
+
+            for tupStruct in tups:
+                for k in tupStruct._fields:
+                    if k.startswith("Diagnostic"):
+                        k_str = k.replace('_', '/', 1)
+                        fields.append(k_str)
+                    else:
+                        for st in stat_list:
+                            fields.append(f'{k}/{st}')
+
+            return fields
+
+        def process_agg_dict(agg_dict):
+            out_dict = {}
+            for k in agg_dict:
+                n = agg_dict[k]['n']
+                out_dict[f'{k}/Avg'] = agg_dict[k]['sum'] / n
+                out_dict[f'{k}/Min'] = agg_dict[k]['min']
+                out_dict[f'{k}/Max'] = agg_dict[k]['max']
+            return out_dict
+
+        # Process the aggregate dict
+        all_info_dict = {
+            'Diagnostic/env_name': ''.join([
+                self.env_kwargs[k] for k in self.env_kwargs if 'name' in k
+            ]),
+            'Diagnostic/algo_name': type(self.algo).__name__,
+            **info_dict,
+            **process_agg_dict(aggregate_dict),
+        }
+        jointTupFields = construct_out_logfields(
+            RunnerTupStruct, self.algo.logTupStruct
+        )
 
         # ==
-        # Aggregate
-        self.exp_average_return = ((0.99 * self.exp_average_return)
-                                   + (0.01 * episode_return))
-        self.log_interval_sum_return += episode_return
-        self.log_interval_sum_dict = add_log_dict(self.log_interval_sum_dict,
-                                                  info_dict)
+        # Write header if have not written yet (once per runner instance)
+        if not self.log_header_written:
+            log_title_str = self.log_delim_str.join(jointTupFields)
+            self.logger.info(log_title_str)
+            self.log_header_written = True
 
         # ==
-        # Write at interval
-        # TODO: should also do a write at the last step
-        if episode_count % self.log_interval_episodes == 0:
-            log_dict = avg_log_dict(self.log_interval_sum_dict,
-                                    self.log_interval_episodes)
-            # Incorporate into dict
-            log_dict['episode_count'] = episode_count
-            log_dict['total_steps'] = total_steps
-            log_dict['episode_return'] = (self.log_interval_sum_return /
-                                          self.log_interval_episodes)
-            log_dict['exp_average_return'] = self.exp_average_return
-
-            # Construct current episode log
-            logStructDict = dataclasses.asdict(LogTupStruct(**log_dict))
-            log_str = self.log_delim_str.join([str(logStructDict[k])
-                                               for k in logStructDict])
-
-            # Write or print
-            if self.logger is not None:
-                self.logger.info(log_str)
+        # Write all entries
+        log_list = []
+        for f in jointTupFields:
+            if f in all_info_dict:
+                log_list.append(str(all_info_dict[f]))
             else:
-                print(log_str)
-
-            # Clear
-            self.log_interval_sum_return = 0
-            self.log_interval_sum_dict = None
+                log_list.append(str(None))
+        log_str = self.log_delim_str.join(log_list)
+        self.logger.info(log_str)
 
     def save_checkpoint(self, episode_count, total_steps,
-                        episode_return, info_dict,
-                        force=False):
-        # Conditions
-        if (force or (self.store_checkpoint
-                      and episode_count % self.checkpoint_freq == 0)):
+                        episode_return, info_dict):
+        # ==
+        # Check dir
+        if not os.path.exists(self.checkpoint_dir_path):
+            os.makedirs(self.checkpoint_dir_path)
 
-            # ==
-            # Check dir
-            if not os.path.exists(self.checkpoint_dir_path):
-                os.makedirs(self.checkpoint_dir_path)
+        # ==
+        # Make name
+        if self.checkpoint_type == 'last':
+            out_name = f'ckpt'
+        elif self.checkpoint_type == 'interval':
+            out_name = f'cpkt_steps-{total_steps}_epis-{episode_count}'
+        else:
+            raise NotImplementedError
+        out_path = os.path.join(self.checkpoint_dir_path, out_name)
 
-            # ==
-            # Make name
-            if self.checkpoint_type == 'last':
-                out_name = f'ckpt'
-            elif self.checkpoint_type == 'interval':
-                out_name = f'cpkt_steps-{total_steps}_epis-{episode_count}'
-            else:
-                raise NotImplementedError
-            out_path = os.path.join(self.checkpoint_dir_path, out_name)
+        # ==
+        # Data and save
+        out_json = {
+            'episode_count': episode_count,
+            'total_steps': total_steps,
+            'current_episode_return': episode_return,
+            'info': info_dict,
+        }
 
-            # ==
-            # Data and save
-            out_json = {
-                'episode_count': episode_count,
-                'total_steps': total_steps,
-                'current_episode_return': episode_return,
-                'cur_avg_dict': info_dict,
-            }
-
-            torch.save(obj=self.algo.model.state_dict(),
-                       f=f'{out_path}.pt')
-            with open(f'{out_path}.json', 'w') as fp:
-                json.dump(out_json, fp)
+        torch.save(obj=self.algo.model.state_dict(),
+                   f=f'{out_path}.pt')
+        with open(f'{out_path}.json', 'w') as fp:
+            json.dump(out_json, fp)
 
 
 class IncrementalOnlineRunner(BaseRunner):
@@ -416,12 +443,10 @@ class BatchedOfflineRunner(BaseRunner):
             if ((cur_buffer_size > self.replay_start_buffer_size)
                     and (cur_buffer_size > self.batch_size)):
                 for _ in range(self.train_iterations):
-                    sample_batch = self.replay_buffer.sample(
+                    samples = self.replay_buffer.sample(
                         self.batch_size
-                    )  # (batch_n, tuple)
-                    batch_sample = TransitionTuple(
-                        *[torch.cat(e) for e in zip(*sample_batch)]
-                    )  # (tuple key: torch.tensor of (batch_n, *)
+                    )  # (batch_n, iter)
+                    batch_sample = TransitionTuple(*samples)
 
             # ==
             # Train
@@ -467,18 +492,14 @@ class AsynchBatchedOfflineRunner(BaseRunner):
     def train(self, n_steps):
         # ==
         # Setting up logging
-        dc_fields = [k for k in vars(LogTupStruct())]  # temp object to get name
-        log_title_str = self.log_delim_str.join(dc_fields)
         if self.log_dir_path is not None:
             log_path = os.path.join(self.log_dir_path, 'progress.csv')
             self.init_logger(log_path)
-            self.logger.info(log_title_str)
         else:
-            print(log_title_str)
+            self.logger = None
 
         # ==
         # Initialize processes
-
         lock = mp.Lock()
         self.algo.lock = lock
         self.algo.actor.model.share_memory()
@@ -495,32 +516,22 @@ class AsynchBatchedOfflineRunner(BaseRunner):
         replay_buffer = self.BufferCls(**self.buffer_kwargs)
 
         # ==
-        # Helper for sampling from buffer
-        def buffer_sample():
-            cur_buffer_size = replay_buffer.get_size()
-            if ((cur_buffer_size > self.replay_start_buffer_size)
-                    and (cur_buffer_size > self.buffer_kwargs['batch_size'])):
-                sample_batch = replay_buffer.sample()  # (batch_n, iter)
-                if sample_batch is not None:
-                    batch_sample = TransitionTuple(
-                        *[torch.cat(e) for e in zip(*sample_batch)]
-                    )  # (tuple key: torch.tensor of (batch_n, *)
-                    return batch_sample
-            return None
-
-        # ==
         # Counter variables and iterate training
-        step_counts = 0
-        episode_count = 0
-
+        total_step_counts = 0
+        total_epis_counts = 0
         current_episode_steps = 0
         current_episode_return = 0.0
 
-        while step_counts < n_steps:
+        t0 = time.time()
+        t_interval_steps = 0
+
+        cur_agg_dict = {}  # for logging per-step and per-epis stats
+
+        while total_step_counts < n_steps:
 
             # ==
             # Sample environment for transitions
-            transitions_lists = sampler.step()  # (train_every_n_frames, ) dicts
+            transitions_lists = sampler.step()  # (train_every_n_frames, ) list
 
             # ==
             # Record statistics and store to buffer
@@ -528,29 +539,67 @@ class AsynchBatchedOfflineRunner(BaseRunner):
                 # ==
                 # Process statistics
                 # List entries: state, next_state, action, reward, is_terminal
+                total_step_counts += 1
                 current_episode_steps += 1
-                current_episode_return += tranList[3].item()  # reward
+                t_interval_steps += 1
 
-                if tranList[4].item():  # if done
-                    episode_count += 1
+                reward, done = tranList[3].item(), tranList[4].item()
+                current_episode_return += reward
 
-                    self.write_log(episode_count, step_counts,
-                                   current_episode_return,
-                                   info_dict={})
+                # ==
+                # If episode terminates
+                if done:
+                    # More aggregations
+                    total_epis_counts += 1
+                    cur_agg_dict = aggregate_log_dict(
+                        cur_agg_dict,
+                        {'episode_return': current_episode_return,
+                         'episode_steps': current_episode_steps}
+                    )
 
+                    # Write logs at intervals
+                    if total_epis_counts % self.log_interval_episodes == 0:
+                        # Generate info dict to write
+                        t_elapse = time.time() - t0
+                        steps_ps = t_interval_steps / t_elapse
+                        info_dict = {
+                            'Diagnostic/episode_count': total_epis_counts,
+                            'Diagnostic/step_count': total_step_counts,
+                            'Diagnostic/sec_elapsed': t_elapse,
+                            'Diagnostic/steps_per_sec': steps_ps,
+                        }
+
+                        # Write
+                        self.write_log(info_dict, cur_agg_dict)
+
+                        # Per log reset
+                        t0 = time.time()
+                        t_interval_steps = 0
+                        cur_agg_dict = {}
+
+                    # Per episode reset
                     current_episode_steps = 0
                     current_episode_return = 0.0
 
-                step_counts += 1
+                # ==
+                # Add transition to buffer
                 replay_buffer.add(tranList)
 
             # ==
-            # Train
-            if step_counts >= self.replay_start_buffer_size:
+            # Train via sampling from buffer
+            if total_step_counts >= self.replay_start_buffer_size:
                 for _ in range(self.train_iterations):
+                    # ==
                     # Sample
-                    batch_sample = buffer_sample()
+                    batch_sample = None
+                    cur_buffer_size = replay_buffer.get_size()
+                    if ((cur_buffer_size > self.replay_start_buffer_size)
+                            and (cur_buffer_size > self.buffer_kwargs['batch_size'])):
+                        samples = replay_buffer.sample()  # (batch_n, iter)
+                        if samples is not None:
+                            batch_sample = TransitionTuple(*samples)
 
+                    # ==
                     # Train network
                     if batch_sample is not None:
                         loss = self.algo.compute_loss(batch_sample)
@@ -559,6 +608,8 @@ class AsynchBatchedOfflineRunner(BaseRunner):
                         with lock:
                             self.algo.optimizer.step()
                         out_dict = self.algo.post_update_step(loss)
+                        cur_agg_dict = aggregate_log_dict(cur_agg_dict, out_dict)
+                        # TODO: do the set-network explicitly here?
 
         sampler.close()
         replay_buffer.close()
@@ -624,11 +675,10 @@ class AsynchSampler(mp.Process):
             # algo.episode_reset()   # NOTE maybe add some version of this
 
         # Take action
-        with self.lock:
-            with torch.no_grad():
-                # NOTE maybe TODO: potential speed-up with using only network here
-                # rather than using the agent rng for sampling while locked
-                t_action = self._actor.get_action(self._state, self._total_steps)
+        # NOTE maybe: potential speed-up with using only network here
+        # with self.lock:  # TODO NOTE is this needed?
+        with torch.no_grad():
+            t_action = self._actor.get_action(self._state, self._total_steps)
 
         # Get environment outcomes (MinAtar specific)
         action = t_action.item()
@@ -674,7 +724,10 @@ class AsynchSampler(mp.Process):
 
     def step(self):
         self.__pipe.send([self.STEP, None])
-        return self.__pipe.recv()
+        data = self.__pipe.recv()
+        data = [[x.clone() for x in tranList] for tranList in data]
+        # TODO future: need a way to send back information to be logged as well
+        return data
 
     def close(self):
         self.__pipe.send([self.EXIT, None])
