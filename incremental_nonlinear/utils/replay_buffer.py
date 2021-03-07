@@ -4,40 +4,73 @@
 # Author: Anthony G Chen
 # ============================================================================
 
+from collections import namedtuple
+
 import numpy as np
+import torch
 import torch.multiprocessing as mp
 
 
 class SimpleReplayBuffer:
     """
     Simple replay buffer with uniform sampling
-    TODO: not sure if CPU or GPU yet - seems to be referencing to GPU
-          tensors
     """
 
     def __init__(self, buffer_size, seed=None):
         self.buffer_size = buffer_size
         self.location = 0
+        self.cur_size = 0
+        self.num_item_types = 0
         self.buffer = []
         self.rng = np.random.default_rng(seed=seed)
 
     def add(self, item):
-        # Append when the buffer is not full but overwrite when the buffer is full
-        if len(self.buffer) < self.buffer_size:
-            self.buffer.append(item)
-        else:
-            self.buffer[self.location] = item
+        """
+        Add a new item to buffer
+        :param item: Iterable (list) of torch.tensors to store.
+        """
+        # ==
+        # On first add, initialize the whole buffer with this structure
+        if len(self.buffer) == 0:
+            for x in item:
+                # Construct repeat tuple to pre-alloc memory
+                rep_sizes = [1] * (len(x.size())+1)
+                rep_sizes[0] = self.buffer_size  # (buffer_size, *)
 
-        # Increment the buffer location
+                self.buffer.append(x.repeat(rep_sizes))
+            self.num_item_types = len(item)
+
+        # ==
+        # Storage and increment
+        for k_i, x in enumerate(item):
+            self.buffer[k_i][self.location].copy_(x)
+
         self.location = (self.location + 1) % self.buffer_size
+        self.cur_size = min(self.buffer_size, self.cur_size + 1)
 
     def sample(self, batch_size):
-        samples = self.rng.choice(self.buffer, size=batch_size,
-                                  replace=False)
+        """
+        Sample minibatch from the buffer. ASSUMES: each item type is stored
+        in tensor shape (buffer_size, batch_dim=1, *) so the 2nd dim is
+        squeezed.
+
+        :param batch_size: minibatch size
+        :return: samples of length self.num_item_types, each entry is a
+                 torch.tensor of size (batch_size, *)
+        """
+        samples = []
+        idxs = self.rng.integers(self.cur_size, size=batch_size)
+        # NOTE TODO: potentially use choice(self.cur_size, size=batch_size, replace=False)
+
+        for k_i in range(self.num_item_types):
+            type_batch = self.buffer[k_i][idxs]  # (batch, 1, *)
+            type_batch = type_batch.squeeze(1)  # (batch, *)
+            samples.append(type_batch)
+
         return samples
 
     def get_size(self):
-        return len(self.buffer)
+        return self.cur_size
 
 
 class AsynchSimpleReplayBuffer(mp.Process):
@@ -52,6 +85,7 @@ class AsynchSimpleReplayBuffer(mp.Process):
         self.buffer_size = buffer_size
         self.batch_size = batch_size
         self.seed = seed
+        # TODO: make this class into a wrapper?
 
         self.location = 0
         self.buffer = []
@@ -72,22 +106,17 @@ class AsynchSimpleReplayBuffer(mp.Process):
 
         def sample(cache_idx):
             """Helper for sampling buffer to cache"""
-            batch_data = replay.sample(self.batch_size)  # (batch_size, 5) tens
-            for cache_x, x in zip(cache[cache_idx], batch_data):
-                for i in range(len(cache_x)):
-                    cache_x[i].copy_(x[i])
+            bsamples = replay.sample(self.batch_size)  # (5, batch_size, *)
+            for cache_x, x in zip(cache[cache_idx], bsamples):
+                cache_x.copy_(x)
 
         def set_up_cache():
             """Set up the memory allocation for the caches"""
-            batch_data = replay.sample(self.batch_size)
-            for i in range(2):
-                cache.append([
-                    [x.detach().clone() for x in xiter]
-                    for xiter in batch_data
-                ])
-                for xiter in cache[i]:
-                    for x in xiter:
-                        x.share_memory_()
+            bsamples = replay.sample(self.batch_size)  # (5, batch_size, *)
+            for i in range(2):  # iterate over cache
+                cache.append(bsamples)
+                for x in cache[i]:
+                    x.share_memory_()  # x is tensor shape (batch_size, *)
             sample(0)
             sample(1)
 
@@ -114,7 +143,6 @@ class AsynchSimpleReplayBuffer(mp.Process):
                 raise Exception('Unknown command')
 
     def add(self, item):
-        item = [x.clone() for x in item]
         self.pipe.send([self.ADD, item])
 
     def sample(self):
@@ -125,7 +153,8 @@ class AsynchSimpleReplayBuffer(mp.Process):
             return None
         if data is not None:
             self.cache = data
-        return self.cache[cache_id]
+        samples = self.cache[cache_id]
+        return samples
 
     def get_size(self):
         self.pipe.send([self.SIZE, None])
