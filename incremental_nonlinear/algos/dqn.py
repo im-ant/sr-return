@@ -16,7 +16,7 @@ import torch.optim as optim
 
 # ==
 # Logging related
-LogTupFields = ['value_loss']
+LogTupFields = ['value_loss', 'num_policy_updates', 'grad_norm']
 LogTupStruct = namedtuple(
     'LogTupStruct',
     field_names=LogTupFields, defaults=(None, ) * len(LogTupFields)
@@ -181,8 +181,17 @@ class DQN:
         # Counters and output
         self.policy_updates_counter += 1
 
+        total_grad_norm = 0.0
+        total_param_count = 0
+        for p in self.model.parameters():
+            param_norm = p.grad.data.norm(2)
+            total_grad_norm += param_norm.item() ** 2
+            total_param_count += 1
+
         out_dict = {
             'value_loss': loss.item(),
+            'num_policy_updates': self.policy_updates_counter,
+            'grad_norm': (total_grad_norm/total_param_count),
         }
         # TODO add gradient norm, epsilon, etc.
 
