@@ -1,0 +1,4 @@
+# @package _group_
+cls_string: 'LSF_QNetwork'
+kwargs:
+  sf_hidden_sizes: null
