@@ -19,7 +19,7 @@ from algos.lsf_dqn import LSF_DQN
 from models.ac_network import ACNetwork
 from models.lsf_ac_network import LSF_ACNetwork
 from models.q_network import QNetwork
-from models.lsf_q_network import LSF_QNetwork
+from models.lsf_q_network import *
 from utils.runner import *
 from utils.replay_buffer import *
 

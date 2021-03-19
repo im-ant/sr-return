@@ -32,10 +32,15 @@ mem_per_job="12G"
 # Specify time need (same for all jobs)
 time_per_job="48:00:00"
 
+# Specify nodes to exclude (e.g. if failing, can be empty)
+exclude_nodes=""  # "rtx5,rtx7"
+
 # Specify the list of seeds
 seeds_list=(
-'3' '6' '9' '12' '15' '18'
+'2' '5' '8'
 )
+
+# '3' '6' '9' '12' '15' '18'
 
 #'4' '6' '8' '10' '12' '14' '16' '18' '20'
 #'22' '24' '26' '28' '30' '32' '34' '36' '38' '40'
@@ -61,6 +66,7 @@ for s in "${seeds_list[@]}"; do
          --output="$cur_out_file" \
          --error="$cur_error_file" \
          --export=seeds="$cur_seeds" \
+         --exclude="$exclude_nodes" \
          --job-name=$job_name \
          $job_file
 done

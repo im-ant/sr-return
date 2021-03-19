@@ -153,6 +153,7 @@ class LSF_DQN(DQN):
 
         def sf_gather(sf_tensor, indeces):
             """
+            Get the SFs associated with a particular action
             :param sf_tensor: (batch_n, |A|, d)
             :param indeces: (batch_n, 1)
             :return: (batch_n, d)
@@ -169,13 +170,15 @@ class LSF_DQN(DQN):
         # Current state estimates
         cur_phi = self.policy_net.encoder(states)  # (batch_n, d)
 
-        SF_s_vec = self.policy_net.sf_fn(
-            cur_phi.detach().clone())  # (batch_n, |A|, d)
-        SF_s_a = sf_gather(SF_s_vec, actions)
+        # SF_s_vec = self.policy_net.sf_fn(
+        #     cur_phi.detach().clone())  # (batch_n, |A|, d)
+        # SF_s_a = sf_gather(SF_s_vec, actions)
+        SF_s_a = self.policy_net.sf_fn(
+            cur_phi.detach().clone())  # (batch, d)
 
-        # TODO: need to speed this up if I want to train big networks
-        Q_s_a = self.policy_net(states, self.sf_lambda).gather(1, actions)  # Q(s_t) (batch_n, 1)
-        R_s = self.policy_net.reward_fn(cur_phi)  # Reward (batch_n, 1)
+        # Q_s_a = self.policy_net(states, self.sf_lambda).gather(1, actions)  # Q(s_t) (batch_n, 1)
+        Q_s_a = self.policy_net.value_fn(cur_phi).gather(1, actions)  # (batch, 1)
+        R_s = self.policy_net.reward_fn(cur_phi)  # Reward (batch, 1)
 
         # ==
         # Next state estimates
@@ -185,9 +188,10 @@ class LSF_DQN(DQN):
 
             nex_actions = nex_max_Qs_As[1].unsqueeze(1)  # (batch_n, 1)
             nex_phi = self.target_net.encoder(next_states)  # (batch_n, d)
-            SF_sp_vec = self.target_net.sf_fn(nex_phi)  # (batch_n, |A|, d)
-            SF_sp_ap = (sf_gather(SF_sp_vec, nex_actions)
-                        * (~is_terminal))  # (batch_n, d)
+            # SF_sp_vec = self.target_net.sf_fn(nex_phi)  # (batch_n, |A|, d)
+            # SF_sp_ap = (sf_gather(SF_sp_vec, nex_actions)
+            #             * (~is_terminal))  # (batch_n, d)
+            SF_sp_ap = self.target_net.sf_fn(nex_phi)  # (batch, d)
 
             Q_sp_ap = nex_max_Qs_As[0].unsqueeze(1) * (~is_terminal)  # (batch_n, 1)
 
