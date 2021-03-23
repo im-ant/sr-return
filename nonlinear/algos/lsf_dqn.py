@@ -151,59 +151,34 @@ class LSF_DQN(DQN):
         rewards = sample.reward  # (batch_n, 1)
         is_terminal = sample.is_terminal  # (batch_n, 1)
 
-        def sf_gather(sf_tensor, indeces):
-            """
-            Get the SFs associated with a particular action
-            :param sf_tensor: (batch_n, |A|, d)
-            :param indeces: (batch_n, 1)
-            :return: (batch_n, d)
-            """
-            sizes = list(sf_tensor.size())  # list: [batch, |A|, d]
-            sizes[1] = 1  # list: [batch, 1, d]
-
-            idxs = indeces.clone().unsqueeze(-1)  # (batch_n, 1, 1)
-            idxs = idxs.expand(sizes)  # (batch_n, 1, d)
-
-            return sf_tensor.gather(1, idxs).squeeze(1)
-
         # ==
-        # Current state estimates
-        cur_phi = self.policy_net.encoder(states)  # (batch_n, d)
-
-        # SF_s_vec = self.policy_net.sf_fn(
-        #     cur_phi.detach().clone())  # (batch_n, |A|, d)
-        # SF_s_a = sf_gather(SF_s_vec, actions)
-        SF_s_a = self.policy_net.sf_fn(
-            cur_phi.detach().clone())  # (batch, d)
-
-        # Q_s_a = self.policy_net(states, self.sf_lambda).gather(1, actions)  # Q(s_t) (batch_n, 1)
-        Q_s_a = self.policy_net.value_fn(cur_phi).gather(1, actions)  # (batch, 1)
-        R_s = self.policy_net.reward_fn(cur_phi)  # Reward (batch, 1)
+        # Compute current estimates
+        cur_out_tup = self.policy_net.compute_estimates(states, actions,
+                                                        self.sf_lambda)
+        cur_phi, SF_s_a, Q_s_a, R_s, __ = cur_out_tup
 
         # ==
         # Next state estimates
         with torch.no_grad():
-            nex_max_Qs_As = self.target_net(next_states, self.sf_lambda
-                                            ).detach().max(1)
+            nex_out_tup = self.target_net.compute_targets(
+                next_states, self.sf_lambda)
+            nex_phi, nex_maxQ_sf, nex_maxQ_val = nex_out_tup
 
-            nex_actions = nex_max_Qs_As[1].unsqueeze(1)  # (batch_n, 1)
-            nex_phi = self.target_net.encoder(next_states)  # (batch_n, d)
-            # SF_sp_vec = self.target_net.sf_fn(nex_phi)  # (batch_n, |A|, d)
-            # SF_sp_ap = (sf_gather(SF_sp_vec, nex_actions)
-            #             * (~is_terminal))  # (batch_n, d)
-            SF_sp_ap = self.target_net.sf_fn(nex_phi)  # (batch, d)
+            SF_sp_ap = nex_maxQ_sf * (~is_terminal)  # (batch_n, d)
+            Q_sp_ap = nex_maxQ_val * (~is_terminal)  # (batch_n, 1)
 
-            Q_sp_ap = nex_max_Qs_As[0].unsqueeze(1) * (~is_terminal)  # (batch_n, 1)
+            # Targets
+            SF_target = cur_phi.detach() + (
+                (self.discount_gamma * self.sf_lambda) * SF_sp_ap.detach()
+            )  # (batch_n, d)
+            Q_target = rewards + (
+                    self.discount_gamma * Q_sp_ap.detach()
+            )  # (batch_n, 1)
 
         # ==
         # Losses
-        Q_target = rewards + (self.discount_gamma * Q_sp_ap.detach())
-        SF_target = cur_phi.detach() + (
-                self.discount_gamma * self.sf_lambda * SF_sp_ap.detach()
-        )
-
-        Q_loss = f.smooth_l1_loss(Q_target, Q_s_a)
         SF_loss = f.smooth_l1_loss(SF_target, SF_s_a)
+        Q_loss = f.smooth_l1_loss(Q_target, Q_s_a)
         R_loss = f.smooth_l1_loss(rewards, R_s)
 
         loss = Q_loss + SF_loss + R_loss

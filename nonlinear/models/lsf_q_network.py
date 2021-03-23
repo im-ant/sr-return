@@ -116,6 +116,29 @@ class SF_PerAction(nn.Module):
         return torch.cat(x_sf_list, dim=-2)
 
 
+def helper_sf_gather(sf_tensor, indeces):
+    """
+    Helper function, given a SF tensor and action indeces, return only the
+    SFs associated with the actions
+    :param sf_tensor: SF tensor with action specific dimension of -2, here
+                      with size (batch_n, *, |A|, d)
+    :param indeces: action indeces, size (batch_n, *, 1)
+    :return: action-sf tensor of size (batch_n, *, d)
+    """
+    sizes = list(sf_tensor.size())  # list: [batch, *, |A|, d]
+    sizes[-2] = 1  # list: [batch, *, 1, d]
+
+    idxs = indeces.clone().unsqueeze(-1)  # (batch_n, 1, 1)
+    while len(sizes) > len(idxs.size()):
+        idxs = idxs.unsqueeze(-2)  # (batch_n, *(1), 1, 1)
+    idxs = idxs.expand(sizes)  # (batch_n, *, 1, d)  # TODO check if this works with dim > 3
+
+    # gathering. For dim == -2
+    # out[i]...[j][k] = input[i]...[idxs[i]...[j][k]][k]
+    sf_a_tensor = sf_tensor.gather(-2, idxs)  # (batch_n, *, 1, d)
+    return sf_a_tensor.squeeze(-2)  # (batch_n, *, d)
+
+
 class LQNet_shareQR(nn.Module):
     """
     Lambda Q function network
@@ -143,10 +166,10 @@ class LQNet_shareQR(nn.Module):
                                   sf_hidden_sizes=self.sf_hidden_sizes)
 
         self.value_fn = nn.Linear(in_features=self.feature_dim,
-                                  out_features=1, bias=False)  # TODO decide whether action out
+                                  out_features=1, bias=False)
 
         self.reward_fn = nn.Linear(in_features=self.feature_dim,
-                                   out_features=1, bias=False)  # TOO decide whether action out
+                                   out_features=1, bias=False)
 
     def forward(self, x, sf_lambda):
         phi = self.encoder(x)  # (N, *, d)
@@ -203,6 +226,98 @@ class LQNet_sharePsiR(nn.Module):
         lsf_q = (((1 - sf_lambda) * sf_v)
                  + (sf_lambda * sf_r))  # (N, *, |A|)
         return lsf_q
+
+
+class LQNet_shareR(nn.Module):
+    """
+    Lambda Q function network
+    Separate: SF and Q functions for each action
+    Share between actions: SF layer, Reward layer
+    """
+
+    def __init__(self, in_channels, num_actions, sf_hidden_sizes):
+        super(LQNet_shareR, self).__init__()
+
+        # ==
+        # Attributes
+        self.in_channels = in_channels
+        self.num_actions = num_actions
+        self.feature_dim = 128
+        self.sf_hidden_sizes = sf_hidden_sizes
+
+        # ==
+        # Initialize modules
+        self.encoder = ConvHead(in_channels=self.in_channels,
+                                feature_dim=self.feature_dim)
+
+        self.sf_fn = SF_PerAction(feature_dim=self.feature_dim,
+                                  num_actions=self.num_actions,
+                                  sf_hidden_sizes=self.sf_hidden_sizes)
+
+        self.value_fn = nn.Linear(in_features=self.feature_dim,
+                                  out_features=self.num_actions,
+                                  bias=False)
+
+        self.reward_fn = nn.Linear(in_features=self.feature_dim,
+                                   out_features=1, bias=False)
+
+    def compute_all_forward(self, x, sf_lambda):
+        phi = self.encoder(x)  # (N, *, d)
+        sf_phi = self.sf_fn(phi)  # (N, *, |A|, d)
+
+        all_a_sf_v = self.value_fn(sf_phi)  # (N, *, |A|, |A|)
+        sf_v = torch.diagonal(
+            all_a_sf_v, dim1=-2, dim2=-1
+        )  # batch diagonal, (N, *, |A|)
+
+        sf_r = self.reward_fn(sf_phi)  # (N, *, |A|, 1)
+        sf_r = sf_r.squeeze(-1)  # (N, *, |A|)
+
+        lsf_qvec = ((1 - sf_lambda) * sf_v) \
+                   + (sf_lambda * sf_r)  # (N, *, |A|)
+
+        # normal items
+        phi_qvec = self.value_fn(phi)  # (N, *, |A|)
+        phi_r = self.reward_fn(phi)  # (N, *, 1)
+
+        return phi, phi_qvec, phi_r, sf_phi, lsf_qvec
+
+    def forward(self, x, sf_lambda):
+        """Q vector used in the policy and in general when model is called"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        return out_tup[-1]  # lsf_qvec (N, *, |A|)
+
+    def compute_estimates(self, x, actions, sf_lambda):
+        """Quantites to estimate in forward pass"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+
+        # SF given current state-action, detach gradient from features
+        de_sf = self.sf_fn(phi.detach())  # (N, *, |A|, d)
+        SF_s_a = helper_sf_gather(de_sf, actions)  # (batch, *, d)
+        # Q given current state-action
+        Q_s_a = phi_qvec.gather(-1, actions)  # (batch, *, 1)
+        # Lambda Q function given current state-action
+        lsfQ_s_a = lsf_qvec.gather(-1, actions)  # (batch, *, 1)
+        # Reward given current state
+        R_s = phi_r  # (batch, *, 1)
+
+        return phi, SF_s_a, Q_s_a, R_s, lsfQ_s_a
+
+    def compute_targets(self, x, sf_lambda):
+        """Quantities relevant for the bootstrap target"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+
+        max_QAs = lsf_qvec.max(-1)  # values: (N,), indeces (N,)
+        maxQ_acts = max_QAs[1].unsqueeze(-1)  # max Q action indeces, (N, 1)
+
+        # SFs given max Q action
+        maxQ_sf = helper_sf_gather(sf_phi, maxQ_acts)  # (N, d)
+        # max Q values
+        maxQ_val = max_QAs[0].unsqueeze(-1)  # max Q values, (N, 1)
+
+        return phi, maxQ_sf, maxQ_val
 
 
 if __name__ == '__main__':
