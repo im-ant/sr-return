@@ -139,51 +139,6 @@ def helper_sf_gather(sf_tensor, indeces):
     return sf_a_tensor.squeeze(-2)  # (batch_n, *, d)
 
 
-class LQNet_shareQR(nn.Module):
-    """
-    Lambda Q function network
-    Separate: SF branch for each action
-    Share between actions: Q function layer, Reward function layer
-    """
-
-    def __init__(self, in_channels, num_actions, sf_hidden_sizes):
-        super(LQNet_shareQR, self).__init__()
-
-        # ==
-        # Attributes
-        self.in_channels = in_channels
-        self.num_actions = num_actions
-        self.feature_dim = 128
-        self.sf_hidden_sizes = sf_hidden_sizes
-
-        # ==
-        # Initialize modules
-        self.encoder = ConvHead(in_channels=self.in_channels,
-                                feature_dim=self.feature_dim)
-
-        self.sf_fn = SF_PerAction(feature_dim=self.feature_dim,
-                                  num_actions=self.num_actions,
-                                  sf_hidden_sizes=self.sf_hidden_sizes)
-
-        self.value_fn = nn.Linear(in_features=self.feature_dim,
-                                  out_features=1, bias=False)
-
-        self.reward_fn = nn.Linear(in_features=self.feature_dim,
-                                   out_features=1, bias=False)
-
-    def forward(self, x, sf_lambda):
-        phi = self.encoder(x)  # (N, *, d)
-        sf_phi = self.sf_fn(phi)  # (N, *, |A|, d)
-
-        sf_v = self.value_fn(sf_phi)  # (N, *, |A|, 1)
-        sf_r = self.reward_fn(sf_phi)  # (N, *, |A|, 1)
-
-        lsf_q = ((1 - sf_lambda) * sf_v) + (sf_lambda * sf_r)
-        lsf_q = lsf_q.squeeze(-1)  # (N, *, |A|)
-
-        return lsf_q
-
-
 class LQNet_sharePsiR(nn.Module):
     """
     Lambda Q function network
@@ -216,16 +171,152 @@ class LQNet_sharePsiR(nn.Module):
         self.reward_fn = nn.Linear(in_features=self.feature_dim,
                                    out_features=1, bias=False)
 
-    def forward(self, x, sf_lambda):
+    def compute_all_forward(self, x, sf_lambda):
         phi = self.encoder(x)  # (N, *, d)
         sf_phi = self.sf_fn(phi)  # (N, *, d)
 
+        # Estimates based on SF
         sf_v = self.value_fn(sf_phi)  # (N, *, |A|)
         sf_r = self.reward_fn(sf_phi)  # (N, *, 1)
 
-        lsf_q = (((1 - sf_lambda) * sf_v)
-                 + (sf_lambda * sf_r))  # (N, *, |A|)
-        return lsf_q
+        lsf_qvec = (((1 - sf_lambda) * sf_v)
+                    + (sf_lambda * sf_r))  # (N, *, |A|)
+
+        # Estimate based on phi
+        phi_qvec = self.value_fn(phi)  # (N, *, |A|)
+        phi_r = self.reward_fn(phi)  # (N, *, 1)
+
+        return phi, phi_qvec, phi_r, sf_phi, lsf_qvec
+
+    def forward(self, x, sf_lambda):
+        """Q vector used in the policy and in general when model is called"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        return out_tup[-1]  # lsf_qvec (N, *, |A|)
+
+    def compute_estimates(self, x, actions, sf_lambda):
+        """Quantites to estimate in forward pass"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+
+        # SF given current state, detach gradient from features
+        SF_de = self.sf_fn(phi.detach())  # (N, *, d)
+        # Q given current state-action
+        Q_s_a = phi_qvec.gather(-1, actions)  # (batch, *, 1)
+        # Lambda Q function given current state-action
+        lsfQ_s_a = lsf_qvec.gather(-1, actions)  # (batch, *, 1)
+        # Reward given current state
+        R_s = phi_r  # (batch, *, 1)
+
+        return phi, SF_de, Q_s_a, R_s, lsfQ_s_a
+
+    def compute_targets(self, x, sf_lambda):
+        """Quantities relevant for the bootstrap target"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+
+        # max Q values
+        max_QAs = lsf_qvec.max(-1)  # values: (N,), indeces (N,)
+        maxQ_val = max_QAs[0].unsqueeze(-1)  # max Q values, (N, 1)
+
+        return phi, sf_phi, maxQ_val
+
+
+class LQNet_sharePsiR_fwdQ(LQNet_sharePsiR):
+    """
+    Same as LQNet_sharePsiR but uses the Q function rather than the
+    lambda Q function for the policy
+    """
+    def forward(self, x, sf_lambda):
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        return out_tup[1]  # phi_qvec (N, *, |A|)
+
+
+class LQNet_shareQR(nn.Module):
+    """
+    Lambda Q function network
+    Separate: SF branch for each action
+    Share between actions: Q function layer, Reward function layer
+    """
+
+    def __init__(self, in_channels, num_actions, sf_hidden_sizes):
+        super(LQNet_shareQR, self).__init__()
+
+        # ==
+        # Attributes
+        self.in_channels = in_channels
+        self.num_actions = num_actions
+        self.feature_dim = 128
+        self.sf_hidden_sizes = sf_hidden_sizes
+
+        # ==
+        # Initialize modules
+        self.encoder = ConvHead(in_channels=self.in_channels,
+                                feature_dim=self.feature_dim)
+
+        self.sf_fn = SF_PerAction(feature_dim=self.feature_dim,
+                                  num_actions=self.num_actions,
+                                  sf_hidden_sizes=self.sf_hidden_sizes)
+
+        self.value_fn = nn.Linear(in_features=self.feature_dim,
+                                  out_features=1, bias=False)
+
+        self.reward_fn = nn.Linear(in_features=self.feature_dim,
+                                   out_features=1, bias=False)
+
+    def compute_all_forward(self, x, sf_lambda):
+        phi = self.encoder(x)  # (N, *, d)
+        sf_phi = self.sf_fn(phi)  # (N, *, |A|, d)
+
+        # Estimates using SF
+        sf_v = self.value_fn(sf_phi)  # (N, *, |A|, 1)
+        sf_r = self.reward_fn(sf_phi)  # (N, *, |A|, 1)
+
+        lsf_qvec = (((1 - sf_lambda) * sf_v)
+                    + (sf_lambda * sf_r))  # (N, *, |A|, 1)
+        lsf_qvec = lsf_qvec.squeeze(-1)  # (N, *, |A|)
+
+        # Estimates using phi
+        phi_qvec = self.value_fn(phi)  # (N, *, 1)
+        phi_r = self.reward_fn(phi)  # (N, *, 1)
+
+        return phi, phi_qvec, phi_r, sf_phi, lsf_qvec
+
+    def forward(self, x, sf_lambda):
+        """Q vector used in the policy and in general when model is called"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        return out_tup[-1]  # lsf_qvec (N, *, |A|)
+
+    def compute_estimates(self, x, actions, sf_lambda):
+        """Quantites to estimate in forward pass"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+
+        # SF given current state-action, detach gradient from features
+        de_sf = self.sf_fn(phi.detach())  # (N, *, |A|, d)
+        SF_s_a = helper_sf_gather(de_sf, actions)  # (batch, *, d)
+        # Q given current state
+        Q_s_a = phi_qvec  # (batch, *, 1)
+        # Lambda Q function given current state-action
+        lsfQ_s_a = lsf_qvec.gather(-1, actions)  # (batch, *, 1)
+        # Reward given current state
+        R_s = phi_r  # (batch, *, 1)
+
+        return phi, SF_s_a, Q_s_a, R_s, lsfQ_s_a
+
+    def compute_targets(self, x, sf_lambda):
+        """Quantities relevant for the bootstrap target"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+
+        max_QAs = lsf_qvec.max(-1)  # values: (N,), indeces (N,)
+        maxQ_acts = max_QAs[1].unsqueeze(-1)  # max Q action indeces, (N, 1)
+
+        # SFs given max Q action
+        maxQ_sf = helper_sf_gather(sf_phi, maxQ_acts)  # (N, d)
+        # max Q values
+        maxQ_val = max_QAs[0].unsqueeze(-1)  # max Q values, (N, 1)
+
+        return phi, maxQ_sf, maxQ_val
 
 
 class LQNet_shareR(nn.Module):
