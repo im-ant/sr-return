@@ -392,6 +392,7 @@ class IncrementalOnlineRunner(BaseRunner):
         )
 
     def one_training_step(self, sample, total_steps):
+        sample = TransitionTuple(*sample)
         out_dict = self.algo.optimize_agent(sample, total_steps)
         return out_dict
 
