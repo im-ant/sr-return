@@ -41,6 +41,8 @@ class LSF_DQN(DQN):
                  use_target_net=True,
                  policy_updates_per_target_update=1000,
                  optim_kwargs=None,
+                 sf_optim_kwargs=None,
+                 reward_optim_kwargs=None,
                  seed=None,
                  ):
         super().__init__(
@@ -75,6 +77,8 @@ class LSF_DQN(DQN):
 
         # Optimization parameters
         self.optim_kwargs = optim_kwargs
+        self.sf_optim_kwargs = sf_optim_kwargs
+        self.reward_optim_kwargs = reward_optim_kwargs
         self.optimizer = None
 
         self.policy_updates_per_target_update = policy_updates_per_target_update
@@ -107,18 +111,22 @@ class LSF_DQN(DQN):
         else:
             self.target_net = self.policy_net
 
+        # ==
         # Instantiate optimizer
         if self.optim_kwargs is None:
-            self.optim_kwargs = {
-                'lr': 0.00025,
-                'alpha': 0.95,
-                'centered': True,
-                'eps': 0.01,
-            }  # TODO: confirm with MinAtar code to see if correspond
-        self.optimizer = optim.RMSprop(
-            self.policy_net.parameters(),
-            **self.optim_kwargs,
-        )
+            raise ValueError('optim_kwargs should be specified but is None.')
+        # maybe todo: raise more errors for sf and r parameters
+
+        self.optimizer = optim.RMSprop([
+            {'params': self.policy_net.encoder.parameters(),
+             **self.optim_kwargs},
+            {'params': self.policy_net.value_fn.parameters(),
+             **self.optim_kwargs},
+            {'params': self.policy_net.sf_fn.parameters(),
+             **self.sf_optim_kwargs},
+            {'params': self.policy_net.reward_fn.parameters(),
+             **self.reward_optim_kwargs},
+        ])
 
         # Init actor
         actor_kwargs = {

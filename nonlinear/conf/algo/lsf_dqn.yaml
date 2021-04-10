@@ -14,3 +14,13 @@ kwargs:
     alpha: 0.95  # smoothing constant, default: 0.95
     centered: True  # normalize grad, default: True
     eps: 0.01  # numerical stability, default: 0.01
+  sf_optim_kwargs:
+    lr: 0.00025
+    alpha: 0.95
+    centered: True
+    eps: 0.01
+  reward_optim_kwargs:
+    lr: 0.00025
+    alpha: 0.95
+    centered: True
+    eps: 0.01

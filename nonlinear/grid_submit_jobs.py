@@ -1,6 +1,6 @@
-# ==
-#
-# ==
+# ============================================================================
+# Python script for SLURM submission
+# ============================================================================
 import copy
 from datetime import datetime
 from itertools import product
@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 # Experiment parent directory
-Base_Dir = '/miniscratch/chenant/ant/sr_return/2021-04-08/tmp/'
+Base_Dir = '/miniscratch/chenant/ant/sr_return/2021-04-10/15-53-ldqn-sflr2x/'
 
 # Experimental parameters to pass to hydra
 Experiment_Params_Dict = {
@@ -35,11 +35,15 @@ Experiment_Params_Dict = {
     'algo.kwargs.epsilon_anneal_length': 100000,
     'algo.kwargs.use_target_net': True,
     'algo.kwargs.policy_updates_per_target_update': 1000,
-    'algo.kwargs.optim_kwargs.lr': [0.00025, 0.0005],
+    'algo.kwargs.optim_kwargs.lr': [0.00025],
+    'algo.kwargs.sf_optim_kwargs.lr': [0.0005],
+    'algo.kwargs.reward_optim_kwargs.lr': [0.00025],
     'algo.kwargs.optim_kwargs.alpha': 0.95,
+    'algo.kwargs.sf_optim_kwargs.alpha': 0.95,
+    'algo.kwargs.reward_optim_kwargs.alpha': 0.95,
     'model': 'lsf_q_network',
     'model.cls_string': 'LQNet_sharePsiR_fwdQ',
-    'model.kwargs.sf_hidden_sizes': [[128]],
+    'model.kwargs.sf_hidden_sizes': 'null',  # 'null' for None
     'training.seed': [2, 5, 8],
 }
 
@@ -52,12 +56,6 @@ Slurm_Param = {
     '--time': '48:00:00',
     '--exclude': '',  # can be empty
 }
-
-# SLURM error and output parent directory
-StdOut_Dir = "/miniscratch/chenant/ant/sr_return/stdout_error"
-
-# The python training script to call
-Py_Script = "/home/mila/c/chenant/repos/sr-return/nonlinear/train_nonlinear.py"
 
 
 # Helper method to make experiment sub-directory name
@@ -85,8 +83,22 @@ def get_rundir_name(d):
 
     hydra_time_str = '${now:%Y%m%d%H%M%S}'
 
-    return f'{env_str}/lr{lr_str}lam{lamb_str}s{seed_str}_{hydra_time_str}'
+    return f'{env_str}/lam{lamb_str}s{seed_str}_{hydra_time_str}'
 
+
+# SLURM error and output parent directory
+StdOut_Dir = "/miniscratch/chenant/ant/sr_return/stdout_error"
+
+# The python training script to call
+Py_Script = "/home/mila/c/chenant/repos/sr-return/nonlinear/train_nonlinear.py"
+
+# Where to submit (['slurm', 'local']), only do local for testing
+Submit_Location = 'slurm'
+
+
+# ============================================================================
+# Shouldn't have to touch the below (hopefully)
+# ============================================================================
 
 def params_combination_to_param_dict_list(multirun_param_dict):
     """
@@ -198,10 +210,13 @@ def submit_slurm_job(exp_param_dict):
         scriptfile.write(arg_script)
         scriptfile.flush()
 
-        slurm_args.append(scriptfile.name)
+        if Submit_Location == 'slurm':
+            slurm_args.append(scriptfile.name)
+            print(slurm_args)
+            s_args = [str(e) for e in slurm_args]
+        else:
+            s_args = ['bash', scriptfile.name]
 
-        print(slurm_args)
-        s_args = [str(e) for e in slurm_args]
         subprocess.run(s_args)
 
 
