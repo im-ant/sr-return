@@ -231,6 +231,37 @@ class LQNet_sharePsiR_fwdQ(LQNet_sharePsiR):
         return out_tup[1]  # phi_qvec (N, *, |A|)
 
 
+class LQNet_sharePsiR_gradQ_fwdQ(LQNet_sharePsiR):
+    """
+    Same as LQNet_sharePsiR, with changes:
+        - Use the Q function (rather than the lambda Q) for policy
+        - Reward gradient does not go into encoder layer (so only the
+          Q gradient is propogated into the encoder)
+    """
+
+    def compute_all_forward(self, x, sf_lambda):
+        phi = self.encoder(x)  # (N, *, d)
+        sf_phi = self.sf_fn(phi)  # (N, *, d)
+
+        # Estimates based on SF
+        sf_v = self.value_fn(sf_phi)  # (N, *, |A|)
+        sf_r = self.reward_fn(sf_phi)  # (N, *, 1)
+
+        lsf_qvec = (((1 - sf_lambda) * sf_v)
+                    + (sf_lambda * sf_r))  # (N, *, |A|)
+
+        # Estimate based on phi
+        phi_qvec = self.value_fn(phi)  # (N, *, |A|)
+        phi_r = self.reward_fn(phi.detach())  # (N, *, 1)
+
+        return phi, phi_qvec, phi_r, sf_phi, lsf_qvec
+
+    def forward(self, x, sf_lambda):
+        """Q vector used in the policy and in general when model is called"""
+        out_tup = self.compute_all_forward(x, sf_lambda)
+        return out_tup[-1]  # lsf_qvec (N, *, |A|)
+
+
 class LQNet_shareQR(nn.Module):
     """
     Lambda Q function network
@@ -409,6 +440,8 @@ class LQNet_shareR(nn.Module):
         maxQ_val = max_QAs[0].unsqueeze(-1)  # max Q values, (N, 1)
 
         return phi, maxQ_sf, maxQ_val
+
+
 
 
 if __name__ == '__main__':
