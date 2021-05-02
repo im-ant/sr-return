@@ -146,7 +146,10 @@ class LQNet_sharePsiR(nn.Module):
     Share between actions: SF layer, Reward layer
     """
 
-    def __init__(self, in_channels, num_actions, sf_hidden_sizes):
+    def __init__(self, in_channels, num_actions,
+                 sf_hidden_sizes,
+                 sf_grad_to_phi=False,
+                 reward_grad_to_phi=True):
         super(LQNet_sharePsiR, self).__init__()
 
         # ==
@@ -155,6 +158,9 @@ class LQNet_sharePsiR(nn.Module):
         self.num_actions = num_actions
         self.feature_dim = 128
         self.sf_hidden_sizes = sf_hidden_sizes
+
+        self.sf_grad_to_phi = sf_grad_to_phi
+        self.reward_grad_to_phi = reward_grad_to_phi
 
         # ==
         # Initialize modules
@@ -196,18 +202,24 @@ class LQNet_sharePsiR(nn.Module):
     def compute_estimates(self, x, actions, sf_lambda):
         """Quantites to estimate in forward pass"""
         out_tup = self.compute_all_forward(x, sf_lambda)
-        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+        phi, phi_qvec, phi_r, sf_phi_hasGrad, lsf_qvec = out_tup
 
-        # SF given current state, detach gradient from features
-        SF_de = self.sf_fn(phi.detach())  # (N, *, d)
+        # SF given current state, optional detach grad
+        if self.sf_grad_to_phi:
+            sf_phi = sf_phi_hasGrad
+        else:
+            sf_phi = self.sf_fn(phi.detach())  # (N, *, d)
         # Q given current state-action
         Q_s_a = phi_qvec.gather(-1, actions)  # (batch, *, 1)
         # Lambda Q function given current state-action
         lsfQ_s_a = lsf_qvec.gather(-1, actions)  # (batch, *, 1)
-        # Reward given current state
-        R_s = phi_r  # (batch, *, 1)
+        # Reward given current state, optional detach grad
+        if self.reward_grad_to_phi:
+            R_s = phi_r  # (batch, *, 1)
+        else:
+            R_s = self.reward_fn(phi.detach())  # (batch, *, 1)
 
-        return phi, SF_de, Q_s_a, R_s, lsfQ_s_a
+        return phi, sf_phi, Q_s_a, R_s, lsfQ_s_a
 
     def compute_targets(self, x, sf_lambda):
         """Quantities relevant for the bootstrap target"""
@@ -237,6 +249,8 @@ class LQNet_sharePsiR_gradQ_fwdQ(LQNet_sharePsiR):
         - Use the Q function (rather than the lambda Q) for policy
         - Reward gradient does not go into encoder layer (so only the
           Q gradient is propogated into the encoder)
+    NOTE: deprecated class since adding the gradient passing arguments in
+          class LQNet_sharePsiR
     """
 
     def compute_all_forward(self, x, sf_lambda):
