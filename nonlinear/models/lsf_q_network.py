@@ -238,6 +238,7 @@ class LQNet_sharePsiR_fwdQ(LQNet_sharePsiR):
     Same as LQNet_sharePsiR but uses the Q function rather than the
     lambda Q function for the policy
     """
+
     def forward(self, x, sf_lambda):
         out_tup = self.compute_all_forward(x, sf_lambda)
         return out_tup[1]  # phi_qvec (N, *, |A|)
@@ -283,7 +284,12 @@ class LQNet_shareQR(nn.Module):
     Share between actions: Q function layer, Reward function layer
     """
 
-    def __init__(self, in_channels, num_actions, sf_hidden_sizes):
+    def __init__(self, in_channels, num_actions,
+                 sf_hidden_sizes,
+                 sf_grad_to_phi=False,
+                 value_grad_to_phi=True,
+                 reward_grad_to_phi=True,
+                 ):
         super(LQNet_shareQR, self).__init__()
 
         # ==
@@ -292,6 +298,10 @@ class LQNet_shareQR(nn.Module):
         self.num_actions = num_actions
         self.feature_dim = 128
         self.sf_hidden_sizes = sf_hidden_sizes
+
+        self.sf_grad_to_phi = sf_grad_to_phi
+        self.value_grad_to_phi = value_grad_to_phi
+        self.reward_grad_to_phi = reward_grad_to_phi
 
         # ==
         # Initialize modules
@@ -334,17 +344,29 @@ class LQNet_shareQR(nn.Module):
     def compute_estimates(self, x, actions, sf_lambda):
         """Quantites to estimate in forward pass"""
         out_tup = self.compute_all_forward(x, sf_lambda)
-        phi, phi_qvec, phi_r, sf_phi, lsf_qvec = out_tup
+        phi, phi_qvec, phi_r, sf_phi_hasGrad, lsf_qvec = out_tup
 
-        # SF given current state-action, detach gradient from features
-        de_sf = self.sf_fn(phi.detach())  # (N, *, |A|, d)
-        SF_s_a = helper_sf_gather(de_sf, actions)  # (batch, *, d)
+        # SF givven current state-action
+        if self.sf_grad_to_phi:
+            sf_phi = sf_phi_hasGrad  # (N, *, |A|, d)
+        else:
+            sf_phi = self.sf_fn(phi.detach())  # (N, *, |A|, d)
+        SF_s_a = helper_sf_gather(sf_phi, actions)  # (batch, *, d)
+
         # Q given current state
-        Q_s_a = phi_qvec  # (batch, *, 1)
+        if self.value_grad_to_phi:
+            Q_s_a = phi_qvec  # (batch, *, 1)
+        else:
+            Q_s_a = self.value_fn(phi.detach())
+
         # Lambda Q function given current state-action
         lsfQ_s_a = lsf_qvec.gather(-1, actions)  # (batch, *, 1)
+
         # Reward given current state
-        R_s = phi_r  # (batch, *, 1)
+        if self.reward_grad_to_phi:
+            R_s = phi_r  # (batch, *, 1)
+        else:
+            R_s = self.reward_fn(phi.detach())
 
         return phi, SF_s_a, Q_s_a, R_s, lsfQ_s_a
 
@@ -454,8 +476,6 @@ class LQNet_shareR(nn.Module):
         maxQ_val = max_QAs[0].unsqueeze(-1)  # max Q values, (N, 1)
 
         return phi, maxQ_sf, maxQ_val
-
-
 
 
 if __name__ == '__main__':

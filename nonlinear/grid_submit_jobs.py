@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 # Experiment parent directory
-Base_Dir = '/miniscratch/chenant/ant/sr_return/2021-04-10/15-53-ldqn-sflr2x/'
+Base_Dir = '/miniscratch/chenant/ant/sr_return/2021-05-04/08-35_sf_gradR_lr001'
 
 # Experimental parameters to pass to hydra
 Experiment_Params_Dict = {
@@ -18,7 +18,7 @@ Experiment_Params_Dict = {
     'runner.n_steps': 5e6,
     'runner.kwargs.log_interval_episodes': 10,
     'runner.kwargs.store_checkpoint': True,
-    'runner.kwargs.checkpoint_freq': 2500,
+    'runner.kwargs.checkpoint_freq': 2000,
     'runner.kwargs.checkpoint_dir_path': './checkpoints/',
     'runner.kwargs.train_every_n_frames': 1,
     'runner.kwargs.train_iterations': 1,
@@ -28,22 +28,25 @@ Experiment_Params_Dict = {
     'env.kwargs.env_name': ['breakout', 'asterix', 'seaquest', 'freeway', 'space_invaders'],
     'algo': 'lsf_dqn',
     'algo.kwargs.discount_gamma': 0.99,
-    'algo.kwargs.sf_lambda': [0.0, 0.4, 0.7, 0.95],
+    'algo.kwargs.sf_lambda': [1.0],
     'algo.kwargs.start_epsilon': 1.0,
     'algo.kwargs.end_epsilon': 0.1,
     'algo.kwargs.initial_epsilon_length': 5000,
     'algo.kwargs.epsilon_anneal_length': 100000,
     'algo.kwargs.use_target_net': True,
     'algo.kwargs.policy_updates_per_target_update': 1000,
-    'algo.kwargs.optim_kwargs.lr': [0.00025],
-    'algo.kwargs.sf_optim_kwargs.lr': [0.0005],
-    'algo.kwargs.reward_optim_kwargs.lr': [0.00025],
+    'algo.kwargs.optim_kwargs.lr': [0.001],
+    'algo.kwargs.sf_optim_kwargs.lr': [0.001],
+    'algo.kwargs.reward_optim_kwargs.lr': [0.001],
     'algo.kwargs.optim_kwargs.alpha': 0.95,
     'algo.kwargs.sf_optim_kwargs.alpha': 0.95,
     'algo.kwargs.reward_optim_kwargs.alpha': 0.95,
     'model': 'lsf_q_network',
-    'model.cls_string': 'LQNet_sharePsiR_fwdQ',
+    'model.cls_string': 'LQNet_shareQR',
     'model.kwargs.sf_hidden_sizes': 'null',  # 'null' for None
+    'model.kwargs.sf_grad_to_phi': False,
+    '+model.kwargs.value_grad_to_phi': False,
+    'model.kwargs.reward_grad_to_phi': True,
     'training.seed': [2, 5, 8],
 }
 
@@ -53,7 +56,7 @@ Slurm_Param = {
     '--gres': 'gpu:1',
     '--partition': 'main,long',
     '--mem': '12G',
-    '--time': '48:00:00',
+    '--time': '26:00:00',  # max '48:00:00'
     '--exclude': '',  # can be empty
 }
 
@@ -72,11 +75,14 @@ def get_rundir_name(d):
     lr_fl = float(d['algo.kwargs.optim_kwargs.lr'])
     lr_str = str(lr_fl - int(lr_fl))[2:7]
 
-    lamb_fl = float(d['algo.kwargs.sf_lambda'])
-    if lamb_fl < 1.0:
-        lamb_str = str(lamb_fl - int(lamb_fl))[2:4]
+    if d['algo'] == 'lsf_dqn':
+        lamb_fl = float(d['algo.kwargs.sf_lambda'])
+        if lamb_fl < 1.0:
+            lamb_str = str(lamb_fl - int(lamb_fl))[2:4]
+        else:
+            lamb_str = '10'
     else:
-        lamb_str = '10'
+        lamb_str = 'None'
 
     seed_int = int(d['training.seed'])
     seed_str = str(seed_int)
@@ -186,7 +192,11 @@ def submit_slurm_job(exp_param_dict):
 
     # ==
     # Construct the outer submission arguments
-    job_name = f'atar_{exp_param_dict["env.kwargs.env_name"]}'
+    dir_day = Base_Dir.split('/')[-2].split('-')[-1]  # hard-coded date day
+    dir_time = ''.join(
+        Base_Dir.split('/')[-1].split('-')[0:2])  # hard-coded date time
+    job_name = f'{dir_day}-{dir_time}_{exp_param_dict["env.kwargs.env_name"]}'
+
     cur_datetime = datetime.now().strftime("%Y%m%d-%H%M%S")
     err_file = os.path.join(
         StdOut_Dir, f'{cur_datetime}_error_{job_name}.txt'
