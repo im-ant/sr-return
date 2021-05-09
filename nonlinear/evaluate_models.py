@@ -15,6 +15,7 @@ import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import random
 import torch
+import torch.nn.functional as f
 
 from minatar import Environment  # MinAtar repo
 
@@ -86,19 +87,30 @@ def per_step_evaluation(actor, sample_list):
     # phi
     with torch.no_grad():
         # phi
-        phi = model.encoder(cur_s)
+        if hasattr(model, 'encoder'):  # the LSF DQN model has this
+            phi = model.encoder(cur_s)
+        elif hasattr(model, 'conv'):     # the vanilla DQN has this
+            h = f.relu(model.conv(cur_s))
+            phi = f.relu(model.fc_hidden(h.view(h.size(0), -1)))
+        else:
+            raise NotImplementedError  # should not happen?
         phi_norm = torch.norm(phi)
 
         # reward error
-        pred_r = model.reward_fn(phi)
-        rew_mse = (pred_r - reward) ** 2
+        pred_r = None
+        rew_mse = None
+        if hasattr(model, 'reward_fn'):
+            pred_r = model.reward_fn(phi)
+            rew_mse = (pred_r - reward) ** 2
 
     #
     out_dict = {
         'phi_norm': phi_norm.item(),
-        'pred_reward': pred_r.item(),
-        'reward_mse': rew_mse.item(),
     }
+    if pred_r is not None:
+        out_dict['pred_reward'] = pred_r.item()
+    if rew_mse is not None:
+        out_dict['reward_mse'] = rew_mse.item()
 
     return out_dict
 
@@ -126,7 +138,13 @@ def post_run_evaluation(actor, buffer):
 
     with torch.no_grad():
         # phi
-        phi = model.encoder(cur_s)
+        if hasattr(model, 'encoder'):  # the LSF DQN model has this
+            phi = model.encoder(cur_s)
+        elif hasattr(model, 'conv'):  # the vanilla DQN has this
+            h = f.relu(model.conv(cur_s))
+            phi = f.relu(model.fc_hidden(h.view(h.size(0), -1)))
+        else:
+            raise NotImplementedError  # should not happen?
         srank = compute_srank(phi)
         norm = np.average(torch.norm(phi).numpy())
 
@@ -313,6 +331,9 @@ def initialize_and_run_saved_models(model_path: str,
     algo_info_str = str({
         'discount_gamma': cfg_dict['algo']['kwargs']['discount_gamma'],
     })
+    algo_kwargs_sf_lambda = 'None'
+    if 'sf_lambda' in cfg_dict['algo']['kwargs']:
+        algo_kwargs_sf_lambda = cfg_dict['algo']['kwargs']['sf_lambda']
     general_info_dict = {
         'Checkpoint/episode_count': ckpt_info['episode_count'],
         'Checkpoint/total_steps': ckpt_info['total_steps'],
@@ -320,7 +341,7 @@ def initialize_and_run_saved_models(model_path: str,
         'Diagnostic/algo_cls_string': cfg_dict['algo']['cls_string'],
         'Diagnostic/model_cls_string': cfg_dict['model']['cls_string'],
         'Diagnostic/algo_info': algo_info_str,
-        'Diagnostic/sf_lambda': cfg_dict['algo']['kwargs']['sf_lambda'],
+        'Diagnostic/sf_lambda': algo_kwargs_sf_lambda,
     }
 
     # ==
@@ -344,10 +365,13 @@ def initialize_and_run_saved_models(model_path: str,
     ckpt_model = torch.load(model_path)
     model.load_state_dict(ckpt_model)
 
+    float_sf_lambda = 0.0
+    if 'sf_lambda' in cfg_dict['algo']['kwargs']:
+        float_sf_lambda = cfg_dict['algo']['kwargs']['sf_lambda']
     actor = Actor(model=model, num_actions=num_actions,
                   algo_cls_string=cfg_dict['algo']['cls_string'],
                   epsilon=cfg.actor.epsilon,
-                  sf_lambda=cfg_dict['algo']['kwargs']['sf_lambda'],
+                  sf_lambda=float_sf_lambda,
                   device='cpu',
                   seed=cfg_dict['training']['seed'])
 
@@ -400,6 +424,8 @@ class Actor:
                 #       everything on CPU
                 if self.algo_cls_string == 'LSF_DQN':
                     action = self.model(state, self.sf_lambda).max(1)[1].view(1, 1)
+                elif self.algo_cls_string == 'DQN':
+                    action = self.model(state).max(1)[1].view(1, 1)
                 else:
                     raise NotImplementedError
 
