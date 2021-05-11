@@ -36,7 +36,10 @@ EvalTupStruct = namedtuple(
         'Checkpoint_episode_count', 'Checkpoint_total_steps',
         'Diagnostic_env_name', 'Diagnostic_algo_cls_string',
         'Diagnostic_model_cls_string',
-        'Diagnostic_algo_info', 'Diagnostic_sf_lambda',
+        'Diagnostic_algo_info',
+        'Diagnostic_algo_optim_lr', 'Diagnostic_algo_sf_optim_lr',
+        'Diagnostic_algo_reward_optim_lr',
+        'Diagnostic_sf_lambda',
         'Diagnostic_episode_count', 'Diagnostic_step_count',
         'Diagnostic_sec_elapsed', 'Diagnostic_steps_per_sec',
         'episode_return', 'episode_steps',
@@ -331,9 +334,21 @@ def initialize_and_run_saved_models(model_path: str,
     algo_info_str = str({
         'discount_gamma': cfg_dict['algo']['kwargs']['discount_gamma'],
     })
+
     algo_kwargs_sf_lambda = 'None'
     if 'sf_lambda' in cfg_dict['algo']['kwargs']:
         algo_kwargs_sf_lambda = cfg_dict['algo']['kwargs']['sf_lambda']
+
+    algo_optim_lr = cfg_dict['algo']['kwargs']['optim_kwargs']['lr']
+
+    algo_sf_optim_lr = 'None'
+    if 'sf_optim_kwargs' in cfg_dict['algo']['kwargs']:
+        algo_sf_optim_lr = cfg_dict['algo']['kwargs']['sf_optim_kwargs']['lr']
+
+    algo_reward_optim_lr = 'None'
+    if 'reward_optim_kwargs' in cfg_dict['algo']['kwargs']:
+        algo_reward_optim_lr = cfg_dict['algo']['kwargs']['reward_optim_kwargs']['lr']
+
     general_info_dict = {
         'Checkpoint/episode_count': ckpt_info['episode_count'],
         'Checkpoint/total_steps': ckpt_info['total_steps'],
@@ -341,6 +356,9 @@ def initialize_and_run_saved_models(model_path: str,
         'Diagnostic/algo_cls_string': cfg_dict['algo']['cls_string'],
         'Diagnostic/model_cls_string': cfg_dict['model']['cls_string'],
         'Diagnostic/algo_info': algo_info_str,
+        'Diagnostic/algo_optim_lr': algo_optim_lr,
+        'Diagnostic/algo_sf_optim_lr': algo_sf_optim_lr,
+        'Diagnostic/algo_reward_optim_lr': algo_reward_optim_lr,
         'Diagnostic/sf_lambda': algo_kwargs_sf_lambda,
     }
 
