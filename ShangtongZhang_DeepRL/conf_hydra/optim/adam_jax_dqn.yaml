@@ -1,0 +1,15 @@
+# @package _group_
+# ========================================================================
+# Hyperparameters for JaxDQN, as implemented in the Dopamine framework
+# Github: https://github.com/google/dopamine/
+#         blob/baf4b8273dce64fcd865185b29f22070a5d96a35/
+#         dopamine/jax/agents/dqn/configs/dqn.gin
+# Interpreted from their hyperparams and the flax default hyperparams
+# ========================================================================
+cls_string: 'Adam'
+kwargs:
+    lr: 6.25e-5
+    betas: [0.9, 0.999]
+    eps: 1.5e-4
+    weight_decay: 0.0
+    amsgrad: False  # NOTE: not in flax, also missing 'centered' arg

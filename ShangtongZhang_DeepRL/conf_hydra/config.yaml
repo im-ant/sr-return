@@ -1,0 +1,26 @@
+defaults:
+  - optim: rmsprop_nature_rainbow
+training:
+  seed: 1
+  max_steps: 2e7
+  discount: 0.99
+  history_length: 4
+  target_network_update_freq: 10000
+  exploration_steps: 5e4
+  double_q: False
+  async_actor: False
+  random_action_schedule:
+    start: 1.0
+    end: 0.01
+    steps: 1e6
+env:
+  game: 'BreakoutNoFrameskip-v4'  # BreakoutNoFrameskip-v4, MsPacmanNoFrameskip-v4
+replay_buffer:
+  kwargs:
+    memory_size: 1e6
+    batch_size: 32
+    n_step: 1
+  asynch: False
+optim:
+  sgd_update_frequency: 4
+  gradient_clip: 5

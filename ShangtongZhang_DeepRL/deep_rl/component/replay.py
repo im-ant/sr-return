@@ -12,9 +12,19 @@ from ..utils import *
 import random
 from collections import namedtuple
 
-Transition = namedtuple('Transition', ['state', 'action', 'reward', 'next_state', 'mask'])
-PrioritizedTransition = namedtuple('Transition',
-                                   ['state', 'action', 'reward', 'next_state', 'mask', 'sampling_prob', 'idx'])
+# try:
+#     mp.set_start_method('spawn')  # forkserver or spawn
+# except RuntimeError as e:
+#     print('multiprocessing RuntimeError:', e)
+
+
+Transition = namedtuple(
+    'Transition', ['state', 'action', 'reward', 'next_state', 'mask']
+)
+PrioritizedTransition = namedtuple(
+    'Transition',
+    ['state', 'action', 'reward', 'next_state', 'mask', 'sampling_prob', 'idx']
+)
 
 
 class Storage:
@@ -85,7 +95,7 @@ class UniformReplay(Storage):
                     size += 1
                 else:
                     storage[self.pos] = v
-                pos = (pos + 1) % self.memory_size
+                pos = int((pos + 1) % self.memory_size)
         self.pos = pos
         self._size = size
 
