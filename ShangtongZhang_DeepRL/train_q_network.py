@@ -20,6 +20,11 @@ def train_dqn_pixel(cfg: DictConfig):
     config.task_fn = lambda: Task(cfg.env.game)
     config.eval_env = config.task_fn()
 
+    # Experiment
+    config.log_interval = cfg.experiment.log_interval
+    config.save_interval = cfg.experiment.save_interval
+    config.eval_interval = cfg.experiment.eval_interval
+
     # General training
     config.max_steps = int(cfg.training.max_steps)
     config.discount = cfg.training.discount
@@ -75,7 +80,7 @@ def train_dqn_pixel(cfg: DictConfig):
     config.double_q = cfg.training.double_q
 
     # Run
-    run_steps(DQNAgent(config))
+    run_steps(DQNAgent(config), cfg)
 
 
 @hydra.main(config_path="conf_hydra", config_name="config")

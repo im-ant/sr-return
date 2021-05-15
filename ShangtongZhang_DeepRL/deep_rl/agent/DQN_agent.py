@@ -133,6 +133,11 @@ class DQNAgent(BaseAgent):
             with config.lock:
                 self.optimizer.step()
 
+            # Logging
+            self.logger.add_scalar(
+                'Loss/total_loss', loss,
+                self.total_steps)
+
         if self.total_steps / self.config.sgd_update_frequency % \
                 self.config.target_network_update_freq == 0:
             self.target_network.load_state_dict(self.network.state_dict())

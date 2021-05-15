@@ -1,5 +1,9 @@
 defaults:
-  - optim: rmsprop_nature_rainbow
+  - optim: adam_jax_dqn
+experiment:
+  log_interval: 1e3
+  save_interval: 1e5  # save per 100k steps
+  eval_interval: 1e5  # eval per 100k steps
 training:
   seed: 1
   max_steps: 2e7
