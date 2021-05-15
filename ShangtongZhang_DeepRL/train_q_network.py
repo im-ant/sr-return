@@ -80,7 +80,9 @@ def train_dqn_pixel(cfg: DictConfig):
     config.double_q = cfg.training.double_q
 
     # Run
-    run_steps(DQNAgent(config), cfg)
+    agent_cls = globals()[cfg.algo.agent_cls_string]
+    agent_obj = agent_cls(config)
+    run_steps(agent_obj, cfg)
 
 
 @hydra.main(config_path="conf_hydra", config_name="config")

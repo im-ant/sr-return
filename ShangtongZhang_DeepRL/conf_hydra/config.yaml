@@ -9,16 +9,18 @@ training:
   max_steps: 2e7
   discount: 0.99
   history_length: 4
-  target_network_update_freq: 10000
-  exploration_steps: 5e4
+  target_network_update_freq: 8000  # 10000 in original, 8000 in Rainbow
+  exploration_steps: 20000  # 50,000 in original, 20,000 in Rainbow
   double_q: False
   async_actor: False
   random_action_schedule:
     start: 1.0
     end: 0.01
-    steps: 1e6
+    steps: 250000  # 1,000,000 in original; 250,000 in Rainbow?
 env:
   game: 'BreakoutNoFrameskip-v4'  # BreakoutNoFrameskip-v4, MsPacmanNoFrameskip-v4
+algo:
+  agent_cls_string: 'DQNAgent'
 replay_buffer:
   kwargs:
     memory_size: 1e6
