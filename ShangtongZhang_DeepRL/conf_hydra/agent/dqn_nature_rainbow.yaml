@@ -1,0 +1,8 @@
+# @package _group_
+# ========================================================================
+# Hyperparameters for DQN, as implemented in the Dopamine framework
+# Github: https://github.com/google/dopamine/
+#         blob/baf4b8273dce64fcd865185b29f22070a5d96a35/
+# ========================================================================
+cls_string: 'DQNAgent'
+kwargs: {}

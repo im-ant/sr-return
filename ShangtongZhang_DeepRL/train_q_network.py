@@ -31,9 +31,11 @@ def train_dqn_pixel(cfg: DictConfig):
     config.history_length = cfg.training.history_length
 
     # Network
-    config.network_fn = lambda: VanillaNet(
+    network_cls = globals()[cfg.network.cls_string]
+    config.network_fn = lambda: network_cls(
         config.action_dim,
-        NatureConvBody(in_channels=config.history_length)
+        NatureConvBody(in_channels=config.history_length),
+        **cfg.network.kwargs,
     )
 
     # Policy
@@ -80,8 +82,8 @@ def train_dqn_pixel(cfg: DictConfig):
     config.double_q = cfg.training.double_q
 
     # Run
-    agent_cls = globals()[cfg.algo.agent_cls_string]
-    agent_obj = agent_cls(config)
+    agent_cls = globals()[cfg.agent.cls_string]
+    agent_obj = agent_cls(config, **cfg.agent.kwargs)
     run_steps(agent_obj, cfg)
 
 

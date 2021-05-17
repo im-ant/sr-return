@@ -21,6 +21,95 @@ class VanillaNet(nn.Module, BaseNet):
         return dict(q=q)
 
 
+class SF_Function(nn.Module):
+    """
+    A single (possibly multi-layer) SF function
+    """
+
+    def __init__(self, feature_dim, sf_hidden_sizes=None):
+        super(SF_Function, self).__init__()
+        self.feature_dim = feature_dim
+        self.sf_hidden_sizes = sf_hidden_sizes
+
+        if sf_hidden_sizes is None or len(sf_hidden_sizes) == 0:
+            sf_fn = nn.Linear(self.feature_dim, self.feature_dim,
+                              bias=False)
+            sf_fn.weight.data.copy_(torch.eye(self.feature_dim))
+        else:
+            sf_fn_layers_list = [
+                nn.Linear(self.feature_dim, sf_hidden_sizes[0]),
+                nn.ReLU(),
+            ]
+            for i in range(1, len(sf_hidden_sizes)):
+                sf_fn_layers_list.extend([
+                    nn.Linear(sf_hidden_sizes[i - 1], sf_hidden_sizes[i]),
+                    nn.ReLU(),
+                ])
+            sf_fn_layers_list.extend([
+                nn.Linear(sf_hidden_sizes[-1], self.feature_dim),
+            ])
+            sf_fn = nn.Sequential(*sf_fn_layers_list)
+
+        self.fn = sf_fn
+
+    def forward(self, x):
+        """
+        :param x: torch tensor of feature, size (N, *, d)
+        :return: tensor of SF, size (N, *, d)
+        """
+        return self.fn(x)
+
+
+class LQVanillaNet_sharePsiR(nn.Module, BaseNet):
+    def __init__(self, output_dim, body,
+                 sf_grad_to_phi=False,
+                 reward_grad_to_phi=True):
+        super(LQVanillaNet_sharePsiR, self).__init__()
+        self.body = body
+
+        self.q_fn = layer_init(
+            nn.Linear(body.feature_dim, output_dim, bias=False)
+        )
+        self.sf_fn = identity_init(
+            nn.Linear(body.feature_dim, body.feature_dim, bias=False)
+        )
+        # self.sf_fn = SF_Function(body.feature_dim, [body.feature_dim])
+
+        self.reward_fn = layer_init(
+            nn.Linear(body.feature_dim, 1, bias=False)
+        )
+
+        self.sf_grad_to_phi = sf_grad_to_phi
+        self.reward_grad_to_phi = reward_grad_to_phi
+
+        self.to(Config.DEVICE)
+
+    def forward(self, x, sf_lambda=0.0):
+        phi = self.body(tensor(x))  # (N, d)
+        q = self.q_fn(phi)  # (N, |A|)
+
+        # Reward estimate
+        if self.reward_grad_to_phi:
+            r_s = self.reward_fn(phi) # (N, 1)
+        else:
+            r_s = self.reward_fn(phi.detach())
+
+        # Lambda successor feature estimate
+        if self.sf_grad_to_phi:
+            psi = self.sf_fn(phi)  # (N, d)
+        else:
+            psi = self.sf_fn(phi.detach())
+
+        # Lambda Value Function estimate
+        sf_v = self.q_fn(psi)  # (N, |A|)
+        sf_r = self.reward_fn(psi)  # (N, 1)
+
+        lamb_q = (((1 - sf_lambda) * sf_v)
+                  + (sf_lambda * sf_r))  # (N, |A|)
+
+        return dict(phi=phi, psi=psi, q=q, rew=r_s, lamb_q=lamb_q)
+
+
 class DuelingNet(nn.Module, BaseNet):
     def __init__(self, action_dim, body):
         super(DuelingNet, self).__init__()

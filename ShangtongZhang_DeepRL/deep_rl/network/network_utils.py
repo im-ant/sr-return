@@ -23,7 +23,16 @@ class BaseNet:
 def layer_init(layer, w_scale=1.0):
     nn.init.orthogonal_(layer.weight.data)
     layer.weight.data.mul_(w_scale)
-    nn.init.constant_(layer.bias.data, 0)
+    if layer.bias is not None:
+        nn.init.constant_(layer.bias.data, 0)
+    return layer
+
+
+def identity_init(layer):
+    eye_mat = torch.eye(layer.weight.size(0))
+    layer.weight.data.copy_(eye_mat)
+    if layer.bias is not None:
+        nn.init.constant_(layer.bias.data, 0)
     return layer
 
 

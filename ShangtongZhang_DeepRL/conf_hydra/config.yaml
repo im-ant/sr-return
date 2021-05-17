@@ -1,5 +1,6 @@
 defaults:
   - optim: adam_jax_dqn
+  - agent: dqn_nature_rainbow
 experiment:
   log_interval: 1e3
   save_interval: 1e5  # save per 100k steps
@@ -19,8 +20,12 @@ training:
     steps: 250000  # 1,000,000 in original; 250,000 in Rainbow?
 env:
   game: 'BreakoutNoFrameskip-v4'  # BreakoutNoFrameskip-v4, MsPacmanNoFrameskip-v4
-algo:
-  agent_cls_string: 'DQNAgent'
+agent:
+  cls_string: 'DQNAgent'
+  kwargs: {}
+network:
+  cls_string: 'VanillaNet'
+  kwargs: {}
 replay_buffer:
   kwargs:
     memory_size: 1e6
@@ -30,3 +35,4 @@ replay_buffer:
 optim:
   sgd_update_frequency: 4
   gradient_clip: 5
+  kwargs: {}

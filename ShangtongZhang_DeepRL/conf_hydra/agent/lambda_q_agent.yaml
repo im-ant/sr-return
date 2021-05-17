@@ -1,0 +1,11 @@
+# @package _group_
+# ========================================================================
+# Hyperparameters for DQN, as implemented in the Dopamine framework
+# Github: https://github.com/google/dopamine/
+#         blob/baf4b8273dce64fcd865185b29f22070a5d96a35/
+# ========================================================================
+cls_string: 'LSF_DQNAgent'
+kwargs:
+  sf_lambda: 0.5
+  sf_lr: 6.25e-4
+  reward_lr: 6.25e-4
