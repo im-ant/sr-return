@@ -72,8 +72,7 @@ class LQVanillaNet_sharePsiR(nn.Module, BaseNet):
         )
         self.sf_fn = identity_init(
             nn.Linear(body.feature_dim, body.feature_dim, bias=False)
-        )
-        # self.sf_fn = SF_Function(body.feature_dim, [body.feature_dim])
+        )  # NOTE: multi-layer SF (via SF_Function) not implemented
 
         self.reward_fn = layer_init(
             nn.Linear(body.feature_dim, 1, bias=False)
@@ -90,7 +89,7 @@ class LQVanillaNet_sharePsiR(nn.Module, BaseNet):
 
         # Reward estimate
         if self.reward_grad_to_phi:
-            r_s = self.reward_fn(phi) # (N, 1)
+            r_s = self.reward_fn(phi)  # (N, 1)
         else:
             r_s = self.reward_fn(phi.detach())
 

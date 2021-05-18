@@ -17,7 +17,7 @@ training:
   random_action_schedule:
     start: 1.0
     end: 0.01
-    steps: 250000  # 1,000,000 in original; 250,000 in Rainbow?
+    steps: 250000  # 1,000,000 in original; 250,000 in Rainbow?  TODO this is wrong because of 4 frame skips
 env:
   game: 'BreakoutNoFrameskip-v4'  # BreakoutNoFrameskip-v4, MsPacmanNoFrameskip-v4
 agent:

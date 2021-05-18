@@ -18,12 +18,14 @@ from .DQN_agent import *
 class LSF_DQNAgent(DQNAgent):
     def __init__(self, config,
                  sf_lambda=0.0,
+                 sf_target_net=True,
                  sf_lr=6.25e-5, reward_lr=6.25e-5):
         DQNAgent.__init__(self, config)
         self.config = config
         config.lock = mp.Lock()
 
         self.sf_lambda = sf_lambda
+        self.sf_target_net = sf_target_net
 
         self.replay = config.replay_fn()
         self.actor = DQNActor(config)
@@ -71,15 +73,21 @@ class LSF_DQNAgent(DQNAgent):
 
         # Compute next step estimate
         with torch.no_grad():
+            next_dict = self.target_network(
+                next_states, sf_lambda=self.sf_lambda)
+
             # Next step SF estimate
-            next_dict = self.target_network(next_states)
-            psi_next = next_dict['psi'].detach()  # (N, d)
+            if self.sf_target_net:
+                psi_next = next_dict['psi'].detach()  # (N, d)
+            else:
+                psi_next = self.network(
+                    next_states, sf_lambda=self.sf_lambda)['psi'].detach()
 
             # Next step Q estimate
             q_next = next_dict['lamb_q'].detach()  # (N, |A|)
             if self.config.double_q:
-                best_actions = torch.argmax(
-                    self.network(next_states)['lamb_q'], dim=-1)
+                best_actions = torch.argmax(self.network(
+                    next_states, sf_lambda=self.sf_lambda)['lamb_q'], dim=-1)
                 q_next = q_next.gather(1, best_actions.unsqueeze(-1)).squeeze(1)
             else:
                 q_next = q_next.max(1)[0]  # (N, 1)
@@ -88,7 +96,7 @@ class LSF_DQNAgent(DQNAgent):
         rewards = tensor(transitions.reward)
 
         # Current estimates
-        cur_dict = self.network(states)
+        cur_dict = self.network(states, sf_lambda=self.sf_lambda)
         phi_cur = cur_dict['phi']
         psi_cur = cur_dict['psi']
         reward_cur = cur_dict['rew']
