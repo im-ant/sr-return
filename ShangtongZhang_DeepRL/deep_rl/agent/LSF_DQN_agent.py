@@ -19,7 +19,8 @@ class LSF_DQNAgent(DQNAgent):
     def __init__(self, config,
                  sf_lambda=0.0,
                  sf_target_net=True,
-                 sf_lr=6.25e-5, reward_lr=6.25e-5):
+                 sf_optim_kwargs=None,
+                 reward_optim_kwargs=None):
         DQNAgent.__init__(self, config)
         self.config = config
         config.lock = mp.Lock()
@@ -40,9 +41,9 @@ class LSF_DQNAgent(DQNAgent):
             {'params': self.network.body.parameters()},
             {'params': self.network.q_fn.parameters()},
             {'params': self.network.sf_fn.parameters(),
-             'lr': sf_lr},
+             **sf_optim_kwargs},
             {'params': self.network.reward_fn.parameters(),
-             'lr': reward_lr},
+             **reward_optim_kwargs},
         ]
         self.optimizer = config.optimizer_fn(param_groups)
 
@@ -158,7 +159,7 @@ class LSF_DQNAgent(DQNAgent):
             rew_loss = self.reduce_loss(error_dict['rew'])
             total_loss = q_loss + psi_loss + rew_loss
 
-            self.optimizer.zero_grad()  # TODO make lr independent
+            self.optimizer.zero_grad()
             total_loss.backward()
             nn.utils.clip_grad_norm_(self.network.parameters(), self.config.gradient_clip)
             with config.lock:

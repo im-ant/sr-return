@@ -1,3 +1,7 @@
+# ========================================================================
+# Based mainly on the Rainbow hyperparameters:
+# https://arxiv.org/abs/1710.02298.pdf
+# ========================================================================
 defaults:
   - optim: adam_jax_dqn
   - agent: dqn_nature_rainbow
@@ -10,14 +14,14 @@ training:
   max_steps: 2e7
   discount: 0.99
   history_length: 4
-  target_network_update_freq: 8000  # 10000 in original, 8000 in Rainbow
-  exploration_steps: 20000  # 50,000 in original, 20,000 in Rainbow
+  target_network_update_freq: 8000  # 8k updates in Rainbow (32k frames), 10k updates in original
+  exploration_steps: 80000  # 80k frames in Rainbow (50k frames in DQN)
   double_q: False
   async_actor: False
   random_action_schedule:
     start: 1.0
     end: 0.01
-    steps: 250000  # 1,000,000 in original; 250,000 in Rainbow?  TODO this is wrong because of 4 frame skips
+    steps: 250000  # 250k frames in Rainbow, 1M frames in original
 env:
   game: 'BreakoutNoFrameskip-v4'  # BreakoutNoFrameskip-v4, MsPacmanNoFrameskip-v4
 agent:
