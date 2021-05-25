@@ -17,7 +17,7 @@ from .DQN_agent import *
 
 class LSF_DQNAgent(DQNAgent):
     def __init__(self, config,
-                 sf_lambda=0.0,
+                 sf_lambda_kwargs=None,
                  sf_target_net=True,
                  sf_optim_kwargs=None,
                  reward_optim_kwargs=None):
@@ -25,7 +25,8 @@ class LSF_DQNAgent(DQNAgent):
         self.config = config
         config.lock = mp.Lock()
 
-        self.sf_lambda = sf_lambda
+        self.sf_lambda_kwargs = sf_lambda_kwargs
+        self.lambda_scheduler = LinearSchedule(**sf_lambda_kwargs)
         self.sf_target_net = sf_target_net
 
         self.replay = config.replay_fn()
@@ -72,23 +73,29 @@ class LSF_DQNAgent(DQNAgent):
         states = self.config.state_normalizer(transitions.state)
         next_states = self.config.state_normalizer(transitions.next_state)
 
+        #
+        if self.total_steps < config.exploration_steps:
+            cur_sf_lambda = self.sf_lambda_kwargs.start
+        else:
+            cur_sf_lambda = self.lambda_scheduler()
+
         # Compute next step estimate
         with torch.no_grad():
             next_dict = self.target_network(
-                next_states, sf_lambda=self.sf_lambda)
+                next_states, sf_lambda=cur_sf_lambda)
 
             # Next step SF estimate
             if self.sf_target_net:
                 psi_next = next_dict['psi'].detach()  # (N, d)
             else:
                 psi_next = self.network(
-                    next_states, sf_lambda=self.sf_lambda)['psi'].detach()
+                    next_states, sf_lambda=cur_sf_lambda)['psi'].detach()
 
             # Next step Q estimate
             q_next = next_dict['lamb_q'].detach()  # (N, |A|)
             if self.config.double_q:
                 best_actions = torch.argmax(self.network(
-                    next_states, sf_lambda=self.sf_lambda)['lamb_q'], dim=-1)
+                    next_states, sf_lambda=cur_sf_lambda)['lamb_q'], dim=-1)
                 q_next = q_next.gather(1, best_actions.unsqueeze(-1)).squeeze(1)
             else:
                 q_next = q_next.max(1)[0]  # (N, 1)
@@ -97,7 +104,7 @@ class LSF_DQNAgent(DQNAgent):
         rewards = tensor(transitions.reward)
 
         # Current estimates
-        cur_dict = self.network(states, sf_lambda=self.sf_lambda)
+        cur_dict = self.network(states, sf_lambda=cur_sf_lambda)
         phi_cur = cur_dict['phi']
         psi_cur = cur_dict['psi']
         reward_cur = cur_dict['rew']
@@ -112,7 +119,7 @@ class LSF_DQNAgent(DQNAgent):
 
         psi_target = (
             phi_cur.detach() + (
-                ((self.config.discount * self.sf_lambda) ** config.n_step)
+                ((self.config.discount * cur_sf_lambda) ** config.n_step)
                 * (psi_next * masks.unsqueeze(1))
             ))
 

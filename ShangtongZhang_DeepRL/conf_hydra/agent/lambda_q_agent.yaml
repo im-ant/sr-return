@@ -6,7 +6,10 @@
 # ========================================================================
 cls_string: 'LSF_DQNAgent'
 kwargs:
-  sf_lambda: 0.5
+  sf_lambda_kwargs:
+    start: 0.5
+    end: 0.5
+    steps: 1
   sf_target_net: True
   sf_optim_kwargs:
     lr: 6.25e-4
