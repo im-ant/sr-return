@@ -1,0 +1,26 @@
+# @package _group_
+cls_string: 'LSF_DQN'
+kwargs:
+  discount_gamma: 0.99
+  sf_lambda: 0.0
+  start_epsilon: 1.0
+  end_epsilon: 0.1
+  initial_epsilon_length: 5000  # default: 5,000
+  epsilon_anneal_length: 100000  # default: 100,000
+  use_target_net: True  # default: True
+  policy_updates_per_target_update: 1000  # default: 1000
+  optim_kwargs:
+    lr: 0.00025  # default: 0.00025
+    alpha: 0.95  # smoothing constant, default: 0.95
+    centered: True  # normalize grad, default: True
+    eps: 0.01  # numerical stability, default: 0.01
+  sf_optim_kwargs:
+    lr: 0.00025
+    alpha: 0.95
+    centered: True
+    eps: 0.01
+  reward_optim_kwargs:
+    lr: 0.00025
+    alpha: 0.95
+    centered: True
+    eps: 0.01

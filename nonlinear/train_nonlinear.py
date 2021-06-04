@@ -15,9 +15,11 @@ from minatar import Environment  # MinAtar repo
 from algos.ac_lambda import ACLambda
 from algos.lsf_ac_lambda import LSF_ACLambda
 from algos.dqn import DQN
+from algos.lsf_dqn import LSF_DQN
 from models.ac_network import ACNetwork
 from models.lsf_ac_network import LSF_ACNetwork
 from models.q_network import QNetwork
+from models.lsf_q_network import *
 from utils.runner import *
 from utils.replay_buffer import *
 

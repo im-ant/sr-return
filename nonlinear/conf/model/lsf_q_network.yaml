@@ -1,0 +1,6 @@
+# @package _group_
+cls_string: 'LQNet_sharePsiR'
+kwargs:
+  sf_hidden_sizes: null
+  sf_grad_to_phi: False
+  reward_grad_to_phi: True

@@ -1,0 +1,11 @@
+defaults:
+  - hydra/job_logging : default     # Job's logging config
+path:
+  dir_wc: null
+  model_append_wc: 'checkpoints/cpkt*.pt'
+  config_append_wc: '.hydra/config.yaml'
+eval:
+  max_steps: 10000
+  buffer_size: 10000
+actor:
+  epsilon: 0.05
