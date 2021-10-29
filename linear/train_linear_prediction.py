@@ -222,7 +222,7 @@ def write_post_episode_log(cfg: DictConfig,
         'env_kwargs': str(cfg.env.kwargs),
         'agentCls_name': cfg.agent.cls_string,
         'seed': cfg.training.seed,  # global seed
-        'lr': cfg.agent.lr,
+        'lr': cfg.agent.kwargs.lr,
     }
 
     # Assume all agent kwargs are available in log
